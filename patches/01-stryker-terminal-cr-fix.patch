@@ -1,0 +1,241 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/metasploit/ExploitLaucnher.java b/app/src/main/java/com/zalexdev/stryker/metasploit/ExploitLaucnher.java
+index ea7d916..abf2cc2 100644
+--- a/app/src/main/java/com/zalexdev/stryker/metasploit/ExploitLaucnher.java
++++ b/app/src/main/java/com/zalexdev/stryker/metasploit/ExploitLaucnher.java
+@@ -191,6 +191,8 @@ public class ExploitLaucnher extends Fragment {
+         metasploitUtils.setMsfUtilsHelper(new MsfUtilsHelper() {
+             @Override public void onNewLineConsole(String line) { }
+ 
++            @Override public void onCarriageReturnConsole(String line) { }
++
+             @Override
+             public void onNewLineShell(String line) {
+                 if (activity == null || !isAdded()) return;
+@@ -212,9 +214,45 @@ public class ExploitLaucnher extends Fragment {
+                     persistConsole();
+                 });
+             }
++
++            @Override
++            public void onCarriageReturnShell(String line) {
++                // In-place update: replace last line instead of appending.
++                // This handles progress indicators that use '\r'.
++                if (activity == null || !isAdded()) return;
++                activity.runOnUiThread(() -> {
++                    if (!isAdded()) return;
++                    replaceLastLine(console, line);
++                    // lineCount unchanged (no new line added)
++                    linesCounter.setText(String.valueOf(lineCount));
++                    consoleScroll.post(() -> consoleScroll.fullScroll(View.FOCUS_DOWN));
++                    if (fullscreenOutput != null) {
++                        replaceLastLine(fullscreenOutput, line);
++                        fullscreenMetric.setText(String.valueOf(lineCount));
++                        fullscreenScroll.post(() -> fullscreenScroll.fullScroll(View.FOCUS_DOWN));
++                    }
++                    persistConsole();
++                });
++            }
+         });
+     }
+ 
++    /**
++     * Replaces the last line in a TextView with new text.
++     * Used for '\r' (carriage return) updates that should refresh
++     * in place instead of appending.
++     */
++    private void replaceLastLine(android.widget.TextView tv, String line) {
++        CharSequence cs = tv.getText();
++        String current = cs != null ? cs.toString() : "";
++        // Find start of last line (after last '\n', ignoring trailing '\n')
++        int end = current.length();
++        while (end > 0 && current.charAt(end - 1) == '\n') end--;
++        int lastNl = end > 0 ? current.lastIndexOf('\n', end - 1) : -1;
++        int start = (lastNl >= 0) ? lastNl + 1 : 0;
++        tv.setText(current.substring(0, start) + line + "\n");
++    }
++
+     public void launchExploit() {
+         if (cancelled.get()) return;
+         if (!metasploitUtils.isAliveShell() || !metasploitUtils.isInitializedShell) {
+diff --git a/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MetasploitUtils.java b/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MetasploitUtils.java
+index f94b1f6..4d8848a 100644
+--- a/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MetasploitUtils.java
++++ b/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MetasploitUtils.java
+@@ -53,6 +53,10 @@ public class MetasploitUtils {
+                 logger.writeLine("[msf-console] " + line, 2);
+                 if (msfUtilsHelper != null) msfUtilsHelper.onNewLineConsole(line);
+             }
++            @Override public void onCarriageReturn(String line) {
++                logger.writeLine("[msf-console] " + line, 2);
++                if (msfUtilsHelper != null) msfUtilsHelper.onCarriageReturnConsole(line);
++            }
+             @Override public void onState(MsfRpcConsole.State state, String reason) {
+                 isInitializingConsole = state == MsfRpcConsole.State.BOOTING;
+                 isInitializedConsole = state == MsfRpcConsole.State.READY;
+@@ -66,6 +70,10 @@ public class MetasploitUtils {
+                 logger.writeLine("[msf-shell] " + line, 2);
+                 if (msfUtilsHelper != null) msfUtilsHelper.onNewLineShell(line);
+             }
++            @Override public void onCarriageReturn(String line) {
++                logger.writeLine("[msf-shell] " + line, 2);
++                if (msfUtilsHelper != null) msfUtilsHelper.onCarriageReturnShell(line);
++            }
+             @Override public void onState(MsfRpcConsole.State state, String reason) {
+                 isInitializingShell = state == MsfRpcConsole.State.BOOTING;
+                 isInitializedShell = state == MsfRpcConsole.State.READY;
+diff --git a/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfRpcConsole.java b/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfRpcConsole.java
+index 3d1bf0c..8f93e5c 100644
+--- a/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfRpcConsole.java
++++ b/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfRpcConsole.java
+@@ -26,6 +26,15 @@ public class MsfRpcConsole {
+     public interface Listener {
+         void onLine(String line);
+         void onState(State state, String reason);
++        /**
++         * Called when a chunk was terminated by '\r' (carriage return)
++         * instead of '\n'. The UI should update the current line in place
++         * instead of appending a new line. Default falls back to onLine
++         * for backward compatibility.
++         */
++        default void onCarriageReturn(String line) {
++            onLine(line);
++        }
+     }
+ 
+     private static final String CHROOT_LAUNCH = Core.EXECUTE + "'msfconsole'\n";
+@@ -83,10 +92,10 @@ public class MsfRpcConsole {
+         try {
+             long cap = System.currentTimeMillis() + BOOT_CAP_MS;
+             long idle = System.currentTimeMillis() + BOOT_IDLE_MS;
+-            String line;
+-            while ((line = readLine(Math.min(cap, idle))) != null) {
++            LineChunk chunk;
++            while ((chunk = readChunk(Math.min(cap, idle))) != null) {
+                 idle = System.currentTimeMillis() + BOOT_IDLE_MS;
+-                line = clean(line);
++                String line = clean(chunk.text);
+                 if (line.contains("metasploit v")) {
+                     version = parseVersion(line);
+                     publishState(State.READY, "v" + version);
+@@ -96,7 +105,7 @@ public class MsfRpcConsole {
+                     publishState(State.DEAD, "msfconsole not installed");
+                     return false;
+                 }
+-                if (!shouldSuppress(line)) emitLine(line);
++                if (!shouldSuppress(line)) emitChunk(new LineChunk(line, chunk.carriageReturn));
+             }
+             publishState(State.DEAD, eof ? "msfconsole exited" : "boot timeout");
+             return false;
+@@ -107,17 +116,53 @@ public class MsfRpcConsole {
+         }
+     }
+ 
++    /**
++     * Result of terminator-aware line reading.
++     */
++    private static class LineChunk {
++        final String text;
++        /** true if terminated by lone '\r' (in-place update), false for '\n' or '\r\n' */
++        final boolean carriageReturn;
++        LineChunk(String text, boolean carriageReturn) {
++            this.text = text;
++            this.carriageReturn = carriageReturn;
++        }
++    }
++
+     private String readLine(long deadline) throws IOException {
++        LineChunk chunk = readChunk(deadline);
++        return chunk != null ? chunk.text : null;
++    }
++
++    /**
++     * Reads until '\n', '\r\n', or lone '\r', preserving which terminator
++     * was seen so the UI can do in-place updates for '\r'.
++     */
++    private LineChunk readChunk(long deadline) throws IOException {
+         BufferedReader r = stdout;
+         if (r == null) return null;
++        StringBuilder sb = new StringBuilder();
+         while (System.currentTimeMillis() < deadline) {
+             try {
+-                String line = r.readLine();
+-                if (line == null) {
++                int c = r.read();
++                if (c == -1) {
+                     eof = true;
+-                    return null;
++                    return sb.length() > 0 ? new LineChunk(sb.toString(), false) : null;
++                }
++                if (c == '\n') {
++                    return new LineChunk(sb.toString(), false);
++                }
++                if (c == '\r') {
++                    // Check for \r\n sequence
++                    r.mark(1);
++                    int next = r.read();
++                    if (next == '\n') {
++                        return new LineChunk(sb.toString(), false);
++                    }
++                    if (next != -1) r.reset();
++                    return new LineChunk(sb.toString(), true);
+                 }
+-                return line;
++                sb.append((char) c);
+             } catch (java.net.SocketTimeoutException idle) {
+                 if (channel == null || !channel.isConnected()) {
+                     eof = true;
+@@ -192,14 +237,14 @@ public class MsfRpcConsole {
+                 stdin.flush();
+                 long cap = System.currentTimeMillis() + CMD_CAP_MS;
+                 long idle = System.currentTimeMillis() + timeoutMs;
+-                String line;
+-                while ((line = readLine(Math.min(cap, idle))) != null) {
++                LineChunk chunk;
++                while ((chunk = readChunk(Math.min(cap, idle))) != null) {
+                     idle = System.currentTimeMillis() + timeoutMs;
+-                    if (line.contains(sentinel)) return out;
+-                    line = clean(line);
++                    if (chunk.text.contains(sentinel)) return out;
++                    String line = clean(chunk.text);
+                     if (shouldSuppress(line)) continue;
+                     out.add(line);
+-                    emitLine(line);
++                    emitChunk(new LineChunk(line, chunk.carriageReturn));
+                 }
+                 publishState(State.DEAD, eof ? "msfconsole exited" : "command timeout");
+             } catch (Exception e) {
+@@ -289,6 +334,15 @@ public class MsfRpcConsole {
+         if (listener != null) listener.onLine(line);
+     }
+ 
++    private void emitChunk(LineChunk chunk) {
++        if (listener == null || chunk == null) return;
++        if (chunk.carriageReturn) {
++            listener.onCarriageReturn(chunk.text);
++        } else {
++            listener.onLine(chunk.text);
++        }
++    }
++
+     private static String clean(String line) {
+         if (line == null) return "";
+         line = line.replaceAll("\\[[0-9;]*[a-zA-Z]", "");
+diff --git a/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfUtilsHelper.java b/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfUtilsHelper.java
+index aee4f9f..4dde90a 100644
+--- a/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfUtilsHelper.java
++++ b/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfUtilsHelper.java
+@@ -3,4 +3,14 @@ package com.zalexdev.stryker.metasploit.utils;
+ public interface MsfUtilsHelper {
+     void onNewLineConsole(String line);
+     void onNewLineShell(String line);
++    /**
++     * Called for '\r'-terminated output (in-place update).
++     * Default falls back to onNewLine for backward compatibility.
++     */
++    default void onCarriageReturnConsole(String line) {
++        onNewLineConsole(line);
++    }
++    default void onCarriageReturnShell(String line) {
++        onNewLineShell(line);
++    }
+ }
