@@ -1,0 +1,30 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/utils/Core.java b/app/src/main/java/com/zalexdev/stryker/utils/Core.java
+index 7f2c7b4..27c47ab 100644
+--- a/app/src/main/java/com/zalexdev/stryker/utils/Core.java
++++ b/app/src/main/java/com/zalexdev/stryker/utils/Core.java
+@@ -958,9 +958,17 @@ public class Core {
+     public boolean checkFolder(String path){
+         return probeFolder(path) == Presence.YES;
+     }
++    // Quiet probe: does the root manager's DB have the Magisk "policies" table?
++    // Keeps non-Magisk root setups from spamming "no such table: policies" in the log.
++    private boolean magiskPoliciesTableExists(){
++        String probe = "/data/data/com.zalexdev.stryker/files/sqlite3 /data/adb/magisk.db "
++                + "\"SELECT name FROM sqlite_master WHERE type='table' AND name='policies';\"";
++        return Core.contains(customCommand(probe, true), "policies");
++    }
+     public boolean checkMagiskNotification(){
+         reCreateProcess();
+         if (!getBoolean("offed")){
++        if (!magiskPoliciesTableExists()) return false;
+         String cmd = "/data/data/com.zalexdev.stryker/files/sqlite3 /data/adb/magisk.db \"SELECT notification FROM policies WHERE package_name='com.zalexdev.stryker';\"";
+         boolean b = Core.contains(customCommand(cmd),"1");
+         if (!b) {
+@@ -1522,6 +1530,7 @@ public class Core {
+     }
+ 
+     public void disableMagiskNotification() {
++                if (!magiskPoliciesTableExists()) return;
+ 
+                 if (contains(customCommand("/data/data/com.zalexdev.stryker/files/sqlite3 "
+                         + "/data/adb/magisk.db"
