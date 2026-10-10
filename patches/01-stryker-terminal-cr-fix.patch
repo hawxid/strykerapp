@@ -84,7 +84,7 @@ index f94b1f6..4d8848a 100644
                  isInitializingShell = state == MsfRpcConsole.State.BOOTING;
                  isInitializedShell = state == MsfRpcConsole.State.READY;
 diff --git a/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfRpcConsole.java b/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfRpcConsole.java
-index 3d1bf0c..8f93e5c 100644
+index 3d1bf0c..78eede7 100644
 --- a/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfRpcConsole.java
 +++ b/app/src/main/java/com/zalexdev/stryker/metasploit/utils/MsfRpcConsole.java
 @@ -26,6 +26,15 @@ public class MsfRpcConsole {
@@ -165,7 +165,8 @@ index 3d1bf0c..8f93e5c 100644
                      eof = true;
 -                    return null;
 +                    return sb.length() > 0 ? new LineChunk(sb.toString(), false) : null;
-+                }
+                 }
+-                return line;
 +                if (c == '\n') {
 +                    return new LineChunk(sb.toString(), false);
 +                }
@@ -178,8 +179,7 @@ index 3d1bf0c..8f93e5c 100644
 +                    }
 +                    if (next != -1) r.reset();
 +                    return new LineChunk(sb.toString(), true);
-                 }
--                return line;
++                }
 +                sb.append((char) c);
              } catch (java.net.SocketTimeoutException idle) {
                  if (channel == null || !channel.isConnected()) {
@@ -204,7 +204,50 @@ index 3d1bf0c..8f93e5c 100644
                  }
                  publishState(State.DEAD, eof ? "msfconsole exited" : "command timeout");
              } catch (Exception e) {
-@@ -289,6 +334,15 @@ public class MsfRpcConsole {
+@@ -266,12 +311,37 @@ public class MsfRpcConsole {
+         if (err == null) return;
+         stderrPump = new Thread(() -> {
+             BufferedReader br = new BufferedReader(new InputStreamReader(err));
+-            String line;
++            StringBuilder sb = new StringBuilder();
+             try {
+-                while ((line = br.readLine()) != null) {
+-                    String cleaned = clean(line);
+-                    if (shouldSuppress(cleaned)) continue;
+-                    emitLine("[stderr] " + cleaned);
++                int c;
++                while ((c = br.read()) != -1) {
++                    if (c == '\n') {
++                        String cleaned = clean(sb.toString());
++                        sb.setLength(0);
++                        if (shouldSuppress(cleaned)) continue;
++                        emitChunk(new LineChunk("[stderr] " + cleaned, false));
++                    } else if (c == '\r') {
++                        br.mark(1);
++                        int next = br.read();
++                        if (next == '\n') {
++                            String cleaned = clean(sb.toString());
++                            sb.setLength(0);
++                            if (shouldSuppress(cleaned)) continue;
++                            emitChunk(new LineChunk("[stderr] " + cleaned, false));
++                        } else {
++                            if (next != -1) br.reset();
++                            String cleaned = clean(sb.toString());
++                            sb.setLength(0);
++                            if (shouldSuppress(cleaned)) continue;
++                            emitChunk(new LineChunk("[stderr] " + cleaned, true));
++                        }
++                    } else {
++                        sb.append((char) c);
++                    }
++                }
++                if (sb.length() > 0) {
++                    String cleaned = clean(sb.toString());
++                    if (!shouldSuppress(cleaned)) emitChunk(new LineChunk("[stderr] " + cleaned, false));
+                 }
+             } catch (IOException ignored) {
+             }
+@@ -289,6 +359,15 @@ public class MsfRpcConsole {
          if (listener != null) listener.onLine(line);
      }
  
