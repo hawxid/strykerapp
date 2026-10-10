@@ -1,0 +1,38 @@
+diff --git a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
+index db84977..c529b27 100644
+--- a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
++++ b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
+@@ -133,6 +133,18 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
+   internal fun applyColorScheme(view: TerminalView?, extraKeysView: ExtraKeysView?) {
+     validateColors()
+ 
++    // MONDBG: background image PoC - reads /sdcard/term_bg.png if present
++    if (view != null) {
++      try {
++        val bgFile = java.io.File("/sdcard/term_bg.png")
++        if (bgFile.exists()) {
++          val drawable = android.graphics.drawable.BitmapDrawable(
++            view.resources, android.graphics.BitmapFactory.decodeFile(bgFile.absolutePath))
++          view.background = drawable
++        }
++      } catch (_: Exception) {}
++    }
++
+     if (view != null) {
+       val scheme = TerminalColorScheme()
+       scheme.updateWith(foregroundColor, backgroundColor, cursorColor, color)
+@@ -141,7 +153,13 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
+         session.emulator.setColorScheme(scheme)
+       }
+       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-        view.setBackgroundColor(TerminalColors.parse(backgroundColor))
++        // MONDBG: skip solid bg if image is set (let image show through)
++        val bgImg = java.io.File("/sdcard/term_bg.png")
++        if (!bgImg.exists()) {
++          view.setBackgroundColor(TerminalColors.parse(backgroundColor))
++        } else {
++          view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
++        }
+       }
+     }
+ 
