@@ -1,5 +1,5 @@
 diff --git a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
-index db84977..6f473eb 100644
+index db84977..5de90de 100644
 --- a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
 +++ b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
 @@ -28,6 +28,10 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
@@ -20,8 +20,8 @@ index db84977..6f473eb 100644
 +    // MONDBG v10: background image PoC - reads /sdcard/Stryker/term_bg.png if present.
 +    // Balik ke layer depan (parent RelativeLayout, per-tab) seperti v5: overview per-tab
 +    // jadi benar, tidak ada gambar decor dobel. Anti-mengerut: bitmap di-pre-scale COVER
-+    // ukuran layar + drawable gravity=CENTER -> saat view menyusut (keyboard), gambar
-+    // ter-crop (tidak squish). Tanpa decorView, tanpa utak-atik bg ancestor.
++    // ukuran layar + drawable gravity=TOP|CENTER_HORIZONTAL -> saat view menyusut
++    // (keyboard), gambar nempel di atas, yang ke-crop cuma bawahnya (tidak squish).
 +    // Bitmap di-decode sekali lalu di-cache. Debug patch, hapus setelah PoC.
 +    var bgImageOk = false
 +    if (view != null) {
@@ -67,7 +67,7 @@ index db84977..6f473eb 100644
 +        val parent = view.getParent() as? android.view.View
 +        if (bitmap != null && parent != null) {
 +          val drawable = android.graphics.drawable.BitmapDrawable(view.resources, bitmap)
-+          drawable.gravity = android.view.Gravity.CENTER
++          drawable.gravity = android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL
 +          parent.background = drawable
 +          view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
 +          bgImageOk = true
