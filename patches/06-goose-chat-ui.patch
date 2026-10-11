@@ -923,10 +923,10 @@ index 0000000..ae48fa8
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
 new file mode 100644
-index 0000000..de7ec46
+index 0000000..7d73c4a
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,91 @@
 +package com.zalexdev.stryker.goose;
 +
 +import com.zalexdev.stryker.utils.Core;
@@ -957,6 +957,16 @@ index 0000000..de7ec46
 +            os.write((Core.EXECUTE + "'" + cmd + "'\n").getBytes(StandardCharsets.UTF_8));
 +            os.flush();
 +            os.close();
++            // Drain stderr biar nggak block
++            Thread et = new Thread(() -> {
++                try {
++                    BufferedReader er = new BufferedReader(new InputStreamReader(
++                            p.getErrorStream(), StandardCharsets.UTF_8));
++                    while (er.readLine() != null) {}
++                } catch (Exception ignored) {}
++            });
++            et.setDaemon(true);
++            et.start();
 +            BufferedReader r = new BufferedReader(
 +                    new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
 +            String line;
@@ -977,10 +987,12 @@ index 0000000..de7ec46
 +    public static List<String> listOutputFiles() {
 +        ensureDirs();
 +        List<String> files = new ArrayList<>();
-+        List<String> lines = runChroot("ls -1p " + OUTPUT_DIR + " 2>/dev/null");
++        // Jangan pake shell redirection (2>/dev/null) — chroot_exec nggak interpret itu
++        List<String> lines = runChroot("ls -1 " + OUTPUT_DIR);
 +        for (String l : lines) {
 +            l = l.trim();
-+            if (!l.isEmpty() && !l.endsWith("/")) {
++            // Skip error messages dan direktori
++            if (!l.isEmpty() && !l.endsWith("/") && !l.startsWith("ls:") && !l.contains("No such")) {
 +                files.add(l);
 +            }
 +        }
