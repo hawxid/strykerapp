@@ -1,9 +1,9 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
 new file mode 100644
-index 0000000..f0bc3ad
+index 0000000..ac47aae
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
-@@ -0,0 +1,470 @@
+@@ -0,0 +1,564 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.util.Log;
@@ -69,6 +69,21 @@ index 0000000..f0bc3ad
 +        }
 +    }
 +
++    /** One entry from session/list. */
++    public static class SessionEntry {
++        public final String sessionId;
++        public final String title;
++        public final String cwd;
++        public final String updatedAt;
++
++        public SessionEntry(String sessionId, String title, String cwd, String updatedAt) {
++            this.sessionId = sessionId;
++            this.title = title;
++            this.cwd = cwd;
++            this.updatedAt = updatedAt;
++        }
++    }
++
 +    public interface Listener {
 +        void onMessageChunk(String messageId, String text);
 +        void onToolCall(String toolCallId, String title, String rawInputJson);
@@ -128,7 +143,9 @@ index 0000000..f0bc3ad
 +                new InputStreamReader(p.getErrorStream(), StandardCharsets.UTF_8));
 +        Thread et = new Thread(() -> {
 +            try {
-+                while (errReader.readLine() != null) { /* discard */ }
++                String el;
++                while ((el = errReader.readLine()) != null) {
++                }
 +            } catch (IOException ignored) { }
 +        }, "goose-acp-stderr");
 +        et.setDaemon(true);
@@ -160,8 +177,7 @@ index 0000000..f0bc3ad
 +    }
 +
 +    /** Create a new session. Returns null on failure. */
-+    public SessionInfo newSession(String cwd, long timeoutMs) {
-+        try {
++    public SessionInfo newSession(String cwd, long timeoutMs) {        try {
 +            int id = nextId.getAndIncrement();
 +            JSONObject params = new JSONObject();
 +            params.put("cwd", cwd);
@@ -184,6 +200,84 @@ index 0000000..f0bc3ad
 +        } catch (Exception e) {
 +            emitError("session/new exception: " + e.getMessage());
 +            return null;
++        }
++    }
++
++    /** Resume an existing session. Returns null on failure. */
++    public SessionInfo loadSession(String sessionId, String cwd, long timeoutMs) {
++        try {
++            int id = nextId.getAndIncrement();
++            JSONObject params = new JSONObject();
++            params.put("sessionId", sessionId);
++            params.put("cwd", cwd);
++            params.put("mcpServers", new JSONArray());
++            Pending p = sendRequest(id, "session/load", params);
++            if (!p.latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
++                pending.remove(id);
++                emitError("session/load timed out");
++                return null;
++            }
++            if (p.error != null || p.result == null) {
++                emitError("session/load failed: " + p.error);
++                return null;
++            }
++            String modeId = "";
++            JSONObject modes = p.result.optJSONObject("modes");
++            if (modes != null) modeId = modes.optString("currentModeId", "");
++            return new SessionInfo(sessionId, modeId);
++        } catch (Exception e) {
++            emitError("session/load exception: " + e.getMessage());
++            return null;
++        }
++    }
++
++    /** List all sessions. Returns empty list on failure. */
++    public List<SessionEntry> listSessions(long timeoutMs) {
++        List<SessionEntry> out = new ArrayList<>();
++        try {
++            int id = nextId.getAndIncrement();
++            Pending p = sendRequest(id, "session/list", new JSONObject());
++            if (!p.latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
++                pending.remove(id);
++                emitError("session/list timed out");
++                return out;
++            }
++            if (p.error != null || p.result == null) {
++                emitError("session/list failed: " + p.error);
++                return out;
++            }
++            JSONArray arr = p.result.optJSONArray("sessions");
++            if (arr == null) return out;
++            for (int i = 0; i < arr.length(); i++) {
++                JSONObject s = arr.getJSONObject(i);
++                out.add(new SessionEntry(
++                        s.getString("sessionId"),
++                        s.optString("title", s.getString("sessionId")),
++                        s.optString("cwd", ""),
++                        s.optString("updatedAt", "")));
++            }
++        } catch (Exception e) {
++            emitError("session/list exception: " + e.getMessage());
++        }
++        return out;
++    }
++
++    /** Delete a session. Returns true on success. */
++    public boolean deleteSession(String sessionId, long timeoutMs) {
++        try {
++            int id = nextId.getAndIncrement();
++            JSONObject params = new JSONObject();
++            params.put("sessionId", sessionId);
++            Pending p = sendRequest(id, "session/delete", params);
++            if (!p.latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
++                pending.remove(id);
++                emitError("session/delete timed out");
++                return false;
++            }
++            return p.error == null;
++        } catch (Exception e) {
++            emitError("session/delete exception: " + e.getMessage());
++            return false;
 +        }
 +    }
 +

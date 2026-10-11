@@ -44,10 +44,10 @@ index 1b99e0e..030ecca 100644
              TapTargetView.showFor(activity,
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 new file mode 100644
-index 0000000..92e5749
+index 0000000..441d47c
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-@@ -0,0 +1,105 @@
+@@ -0,0 +1,111 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.view.Gravity;
@@ -134,6 +134,12 @@ index 0000000..92e5749
 +        notifyItemInserted(messages.size() - 1);
 +    }
 +
++    public void clear() {
++        int n = messages.size();
++        messages.clear();
++        if (n > 0) notifyItemRangeRemoved(0, n);
++    }
++
 +    /** Append text to message at position (for streaming). */
 +    public void appendText(int position, String chunk) {
 +        if (position < 0 || position >= messages.size()) return;
@@ -182,10 +188,10 @@ index 0000000..fcb0427
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..451d53a
+index 0000000..77332b4
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,290 @@
+@@ -0,0 +1,422 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -202,6 +208,7 @@ index 0000000..451d53a
 +import com.google.android.material.textview.MaterialTextView;
 +import com.zalexdev.stryker.R;
 +
++import java.util.ArrayList;
 +import java.util.HashMap;
 +import java.util.List;
 +import java.util.Map;
@@ -235,6 +242,14 @@ index 0000000..451d53a
 +
 +        MaterialToolbar toolbar = findViewById(R.id.goose_toolbar);
 +        toolbar.setNavigationOnClickListener(v -> finish());
++        toolbar.inflateMenu(R.menu.goose_chat_menu);
++        toolbar.setOnMenuItemClickListener(item -> {
++            if (item.getItemId() == R.id.goose_menu_sessions) {
++                showSessionsDialog();
++                return true;
++            }
++            return false;
++        });
 +
 +        statusView = findViewById(R.id.goose_status);
 +        messagesView = findViewById(R.id.goose_messages);
@@ -421,15 +436,23 @@ index 0000000..451d53a
 +
 +    private void showPermissionDialog(String requestId, String title, String command,
 +                                      List<GooseAcpClient.PermissionOption> options) {
-+        String[] names = new String[options.size()];
-+        for (int i = 0; i < options.size(); i++) {
-+            names[i] = prettyOption(options.get(i).optionId);
++        // Fallback: jangan pernah bikin user stuck. Kalo agent nggak kirim options,
++        // sediain default allow_once / reject_once.
++        if (options == null || options.isEmpty()) {
++            options = new ArrayList<>();
++            options.add(new GooseAcpClient.PermissionOption("allow_once", "allow_once", "allow_once"));
++            options.add(new GooseAcpClient.PermissionOption("reject_once", "reject_once", "reject_once"));
++        }
++        final List<GooseAcpClient.PermissionOption> opts = options;
++        String[] names = new String[opts.size()];
++        for (int i = 0; i < opts.size(); i++) {
++            names[i] = prettyOption(opts.get(i).optionId);
 +        }
 +        new AlertDialog.Builder(this)
 +                .setTitle(title)
 +                .setMessage(command.isEmpty() ? "Allow this tool call?" : command)
 +                .setItems(names, (d, which) -> {
-+                    String optionId = options.get(which).optionId;
++                    String optionId = opts.get(which).optionId;
 +                    new Thread(() -> {
 +                        try {
 +                            client.respondPermission(requestId, optionId);
@@ -452,6 +475,121 @@ index 0000000..451d53a
 +            case "reject_always": return "Deny always";
 +            default: return optionId;
 +        }
++    }
++
++    // ------------------------------------------------------------------
++    // Sessions (new / resume / delete)
++    // ------------------------------------------------------------------
++
++    private void showSessionsDialog() {
++        if (client == null) {
++            Toast.makeText(this, "Not connected", Toast.LENGTH_SHORT).show();
++            return;
++        }
++        setStatus("Loading sessions…");
++        new Thread(() -> {
++            List<GooseAcpClient.SessionEntry> sessions = client.listSessions(15000);
++            ui(() -> showSessionList(sessions));
++        }, "goose-list").start();
++    }
++
++    private void showSessionList(List<GooseAcpClient.SessionEntry> sessions) {
++        String[] names = new String[sessions.size() + 1];
++        names[0] = "＋ New session";
++        for (int i = 0; i < sessions.size(); i++) {
++            GooseAcpClient.SessionEntry s = sessions.get(i);
++            String label = s.title;
++            if (s.sessionId.equals(sessionId)) label += " (current)";
++            names[i + 1] = label;
++        }
++        new AlertDialog.Builder(this)
++                .setTitle("Sessions")
++                .setItems(names, (d, which) -> {
++                    if (which == 0) {
++                        startNewSession();
++                    } else {
++                        showSessionOptions(sessions.get(which - 1));
++                    }
++                })
++                .setNegativeButton("Close", null)
++                .show();
++        setStatus("Connected · " + sessionId + " · idle");
++    }
++
++    private void showSessionOptions(GooseAcpClient.SessionEntry s) {
++        new AlertDialog.Builder(this)
++                .setTitle(s.title)
++                .setMessage(s.sessionId)
++                .setPositiveButton("Resume", (d, w) -> resumeSession(s))
++                .setNegativeButton("Delete", (d, w) -> confirmDeleteSession(s))
++                .setNeutralButton("Cancel", null)
++                .show();
++    }
++
++    private void startNewSession() {
++        if (client == null || working) return;
++        setStatus("Creating session…");
++        new Thread(() -> {
++            GooseAcpClient.SessionInfo info = client.newSession(WORK_DIR, 20000);
++            ui(() -> {
++                if (info == null) {
++                    setStatus("Session creation failed");
++                    addSystem("Could not create session.");
++                    return;
++                }
++                switchToSession(info.sessionId, info.modeId);
++            });
++        }, "goose-newsession").start();
++    }
++
++    private void resumeSession(GooseAcpClient.SessionEntry s) {
++        if (client == null || working) return;
++        if (s.sessionId.equals(sessionId)) return;
++        setStatus("Resuming session…");
++        new Thread(() -> {
++            GooseAcpClient.SessionInfo info =
++                    client.loadSession(s.sessionId, s.cwd.isEmpty() ? WORK_DIR : s.cwd, 20000);
++            ui(() -> {
++                if (info == null) {
++                    setStatus("Resume failed");
++                    addSystem("Could not resume session " + s.sessionId);
++                    return;
++                }
++                switchToSession(info.sessionId, info.modeId);
++                addSystem("Resumed session " + s.sessionId + " — history replaying…");
++            });
++        }, "goose-resume").start();
++    }
++
++    private void confirmDeleteSession(GooseAcpClient.SessionEntry s) {
++        new AlertDialog.Builder(this)
++                .setTitle("Delete session?")
++                .setMessage(s.title + "\n" + s.sessionId)
++                .setPositiveButton("Delete", (d, w) -> deleteSession(s))
++                .setNegativeButton("Cancel", null)
++                .show();
++    }
++
++    private void deleteSession(GooseAcpClient.SessionEntry s) {
++        new Thread(() -> {
++            boolean ok = client.deleteSession(s.sessionId, 15000);
++            ui(() -> {
++                Toast.makeText(this, ok ? "Session deleted" : "Delete failed",
++                        Toast.LENGTH_SHORT).show();
++                if (ok && s.sessionId.equals(sessionId)) {
++                    startNewSession();
++                }
++            });
++        }, "goose-delete").start();
++    }
++
++    private void switchToSession(String newSessionId, String modeId) {
++        sessionId = newSessionId;
++        streamingPos = -1;
++        toolPositions.clear();
++        adapter.clear();
++        setStatus("Connected · mode: " + modeId + " · " + sessionId);
++        addSystem("Session ready (" + sessionId + "). Ask anything.");
 +    }
 +
 +    // ------------------------------------------------------------------
@@ -650,6 +788,21 @@ index 0000000..5d6a1e8
 +    </LinearLayout>
 +
 +</LinearLayout>
+diff --git a/app/src/main/res/menu/goose_chat_menu.xml b/app/src/main/res/menu/goose_chat_menu.xml
+new file mode 100644
+index 0000000..1e8e36d
+--- /dev/null
++++ b/app/src/main/res/menu/goose_chat_menu.xml
+@@ -0,0 +1,9 @@
++<?xml version="1.0" encoding="utf-8"?>
++<menu xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto">
++    <item
++        android:id="@+id/goose_menu_sessions"
++        android:title="Sessions"
++        android:icon="@drawable/chat"
++        app:showAsAction="ifRoom" />
++</menu>
 diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
 index 7da0553..1c03b98 100644
 --- a/app/src/main/res/values/strings.xml

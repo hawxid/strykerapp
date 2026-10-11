@@ -1,8 +1,8 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
-index f0bc3ad..59d35fb 100644
+index ac47aae..0e4fca8 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
-@@ -97,6 +97,7 @@ public class GooseAcpClient {
+@@ -112,6 +112,7 @@ public class GooseAcpClient {
       */
      public void connect(Listener listener) throws IOException {
          this.listener = listener;
@@ -10,7 +10,7 @@ index f0bc3ad..59d35fb 100644
          Process p = Runtime.getRuntime().exec("su");
          OutputStream os = p.getOutputStream();
          // Enter chroot, then replace the shell with goose acp so our pipes
-@@ -110,6 +111,7 @@ public class GooseAcpClient {
+@@ -125,6 +126,7 @@ public class GooseAcpClient {
          this.process = p;
          this.out = os;
          this.connected = true;
@@ -18,19 +18,39 @@ index f0bc3ad..59d35fb 100644
  
          BufferedReader reader = new BufferedReader(
                  new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
-@@ -122,7 +124,10 @@ public class GooseAcpClient {
-                 new InputStreamReader(p.getErrorStream(), StandardCharsets.UTF_8));
-         Thread et = new Thread(() -> {
+@@ -139,6 +141,7 @@ public class GooseAcpClient {
              try {
--                while (errReader.readLine() != null) { /* discard */ }
-+                String el;
-+                while ((el = errReader.readLine()) != null) {
+                 String el;
+                 while ((el = errReader.readLine()) != null) {
 +                    Log.d(TAG, "STDERR: " + el.substring(0, Math.min(300, el.length())));
-+                }
+                 }
              } catch (IOException ignored) { }
          }, "goose-acp-stderr");
-         et.setDaemon(true);
-@@ -263,10 +268,16 @@ public class GooseAcpClient {
+@@ -199,6 +202,7 @@ public class GooseAcpClient {
+ 
+     /** Resume an existing session. Returns null on failure. */
+     public SessionInfo loadSession(String sessionId, String cwd, long timeoutMs) {
++        Log.d(TAG, "session/load " + sessionId);
+         try {
+             int id = nextId.getAndIncrement();
+             JSONObject params = new JSONObject();
+@@ -227,6 +231,7 @@ public class GooseAcpClient {
+ 
+     /** List all sessions. Returns empty list on failure. */
+     public List<SessionEntry> listSessions(long timeoutMs) {
++        Log.d(TAG, "session/list");
+         List<SessionEntry> out = new ArrayList<>();
+         try {
+             int id = nextId.getAndIncrement();
+@@ -258,6 +263,7 @@ public class GooseAcpClient {
+ 
+     /** Delete a session. Returns true on success. */
+     public boolean deleteSession(String sessionId, long timeoutMs) {
++        Log.d(TAG, "session/delete " + sessionId);
+         try {
+             int id = nextId.getAndIncrement();
+             JSONObject params = new JSONObject();
+@@ -357,10 +363,16 @@ public class GooseAcpClient {
      private synchronized void send(JSONObject msg) throws IOException {
          if (out == null) throw new IOException("not connected");
          String line = msg.toString();
@@ -47,7 +67,7 @@ index f0bc3ad..59d35fb 100644
  
      private void readLoop(BufferedReader reader) {
          try {
-@@ -281,6 +292,8 @@ public class GooseAcpClient {
+@@ -375,6 +387,8 @@ public class GooseAcpClient {
                      Log.w(TAG, "skipping non-JSON line: " + line.substring(0, Math.min(120, line.length())));
                      continue;
                  }
@@ -56,7 +76,7 @@ index f0bc3ad..59d35fb 100644
                  try {
                      handleMessage(msg);
                  } catch (Exception e) {
-@@ -324,8 +337,10 @@ public class GooseAcpClient {
+@@ -418,8 +432,10 @@ public class GooseAcpClient {
              String stopReason = result != null ? result.optString("stopReason", "") : "";
              JSONObject err = msg.optJSONObject("error");
              if (err != null) {
@@ -67,17 +87,17 @@ index f0bc3ad..59d35fb 100644
              Listener l = listener;
              if (l != null) l.onTurnEnd(sessionId, stopReason);
              return;
-@@ -372,6 +387,8 @@ public class GooseAcpClient {
+@@ -466,6 +482,8 @@ public class GooseAcpClient {
              }
              Listener l = listener;
              if (l != null) l.onPermissionRequest(requestId, toolCallId, title, command, options);
 +            Log.d(TAG, "permission request: " + title + " :: " + trunc(command, 200) +
-+                    " reqId=" + requestId);
++                    " reqId=" + requestId + " options=" + options.size());
          } catch (Exception e) {
              Log.e(TAG, "bad permission request", e);
          }
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-index 451d53a..5628f7b 100644
+index 77332b4..9068f3b 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 @@ -2,6 +2,7 @@ package com.zalexdev.stryker.goose;
@@ -88,7 +108,7 @@ index 451d53a..5628f7b 100644
  import android.widget.Toast;
  
  import androidx.appcompat.app.AppCompatActivity;
-@@ -25,6 +26,7 @@ import java.util.Map;
+@@ -26,6 +27,7 @@ import java.util.Map;
   */
  public class GooseChatActivity extends AppCompatActivity implements GooseAcpClient.Listener {
  
@@ -96,7 +116,7 @@ index 451d53a..5628f7b 100644
      private static final String WORK_DIR = "/root";
  
      private GooseAcpClient client;
-@@ -76,10 +78,13 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -85,10 +87,13 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
      // ------------------------------------------------------------------
  
      private void connectBlocking() {
@@ -110,7 +130,7 @@ index 451d53a..5628f7b 100644
              ui(() -> {
                  setStatus("Failed to start goose: " + e.getMessage());
                  addSystem("Could not launch 'goose acp' in the chroot. " +
-@@ -89,7 +94,9 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -98,7 +103,9 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
              return;
          }
          ui(() -> setStatus("Handshaking…"));
@@ -120,16 +140,15 @@ index 451d53a..5628f7b 100644
              ui(() -> {
                  setStatus("ACP handshake failed");
                  addSystem("No initialize response from goose acp.");
-@@ -97,6 +104,8 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -106,6 +113,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
              return;
          }
          GooseAcpClient.SessionInfo info = client.newSession(WORK_DIR, 20000);
-+        Log.d(TAG, "newSession result: " + (info == null ? "null" :
-+                info.sessionId + " mode=" + info.modeId));
++        Log.d(TAG, "newSession result: " + (info == null ? "null" : info.sessionId + " mode=" + info.modeId));
          if (info == null) {
              ui(() -> {
                  setStatus("Session creation failed");
-@@ -188,6 +197,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -197,6 +205,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
      @Override
      public void onPermissionRequest(String requestId, String toolCallId, String title,
                                      String command, List<GooseAcpClient.PermissionOption> options) {
@@ -137,11 +156,27 @@ index 451d53a..5628f7b 100644
          ui(() -> showPermissionDialog(requestId, title, command, options));
      }
  
-@@ -242,6 +252,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -259,6 +268,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
                  .setMessage(command.isEmpty() ? "Allow this tool call?" : command)
                  .setItems(names, (d, which) -> {
-                     String optionId = options.get(which).optionId;
+                     String optionId = opts.get(which).optionId;
 +                    Log.d(TAG, "permission chosen: " + optionId + " reqId=" + requestId);
                      new Thread(() -> {
                          try {
                              client.respondPermission(requestId, optionId);
+@@ -292,6 +302,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+             Toast.makeText(this, "Not connected", Toast.LENGTH_SHORT).show();
+             return;
+         }
++        Log.d(TAG, "loading sessions");
+         setStatus("Loading sessions…");
+         new Thread(() -> {
+             List<GooseAcpClient.SessionEntry> sessions = client.listSessions(15000);
+@@ -351,6 +362,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+     private void resumeSession(GooseAcpClient.SessionEntry s) {
+         if (client == null || working) return;
+         if (s.sessionId.equals(sessionId)) return;
++        Log.d(TAG, "resuming " + s.sessionId);
+         setStatus("Resuming session…");
+         new Thread(() -> {
+             GooseAcpClient.SessionInfo info =
