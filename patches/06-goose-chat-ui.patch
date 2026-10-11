@@ -16,18 +16,20 @@ index 76de270..b9f5a14 100644
              android:name=".about.ThanksActivity"
              android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
 diff --git a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
-index 1b99e0e..09cc682 100644
+index 1b99e0e..030ecca 100644
 --- a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
 +++ b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
-@@ -119,6 +119,7 @@ public class Dashboard extends Fragment {
-         view.findViewById(R.id.dash_hero).setOnClickListener(
-                 v -> receiver.changeFragment(R.id.wifi_item));
-         view.findViewById(R.id.terminal).setOnClickListener(v -> openTerminal());
-+        view.findViewById(R.id.goose_ai).setOnClickListener(v -> openGooseAi());
-         view.findViewById(R.id.dash_customize).setOnClickListener(v -> showCustomize());
-         view.findViewById(R.id.dash_report).setOnClickListener(v -> reportBug());
-         view.findViewById(R.id.dash_github).setOnClickListener(
-@@ -1143,6 +1144,12 @@ public class Dashboard extends Fragment {
+@@ -915,6 +915,9 @@ public class Dashboard extends Fragment {
+         t.add(new Tool("metasploit", R.string.dashboard_tile_metasploit, R.drawable.shield,
+                 R.drawable.dashboard_tile_bg_red, 0xFFC62828, true,
+                 () -> receiver.changeFragment(R.id.metasploit_item)));
++        t.add(new Tool("goose", R.string.dashboard_card_goose_title, R.drawable.chat,
++                R.drawable.dashboard_tile_bg_green, 0xFF43A047, true,
++                () -> openGooseAi()));
+ 
+         t.add(new Tool("nmap", R.string.dashboard_tile_nmap, R.drawable.scanner,
+                 R.drawable.dashboard_tile_bg_purple, 0xFFAB47BC, false,
+@@ -1143,6 +1146,12 @@ public class Dashboard extends Fragment {
          context.startActivity(terminal);
      }
  
@@ -599,35 +601,6 @@ index 0000000..ca072bc
 +    </LinearLayout>
 +
 +</LinearLayout>
-diff --git a/app/src/main/res/layout/fragment_dashboard.xml b/app/src/main/res/layout/fragment_dashboard.xml
-index 2bdd5e2..40639d9 100644
---- a/app/src/main/res/layout/fragment_dashboard.xml
-+++ b/app/src/main/res/layout/fragment_dashboard.xml
-@@ -684,6 +684,24 @@
-                     android:src="@drawable/arrow_right" />
-             </LinearLayout>
- 
-+            <LinearLayout
-+                android:id="@+id/goose_ai"
-+                style="@style/DashboardRow">
-+
-+                <ImageView
-+                    style="@style/DashboardRowIcon"
-+                    android:src="@drawable/chat"
-+                    app:tint="#00897B" />
-+
-+                <com.google.android.material.textview.MaterialTextView
-+                    style="@style/DashboardRowTitle"
-+                    android:text="@string/dashboard_card_goose_title" />
-+
-+                <ImageView
-+                    style="@style/DashboardRowChevron"
-+                    android:src="@drawable/arrow_right" />
-+            </LinearLayout>
-+
-             <LinearLayout
-                 android:id="@+id/dash_customize"
-                 style="@style/DashboardRow">
 diff --git a/app/src/main/res/layout/item_chat_message.xml b/app/src/main/res/layout/item_chat_message.xml
 new file mode 100644
 index 0000000..5d6a1e8

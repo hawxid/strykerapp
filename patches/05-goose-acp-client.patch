@@ -1,9 +1,9 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
 new file mode 100644
-index 0000000..cb1dde8
+index 0000000..f0bc3ad
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
-@@ -0,0 +1,467 @@
+@@ -0,0 +1,470 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.util.Log;
@@ -106,9 +106,11 @@ index 0000000..cb1dde8
 +        Process p = Runtime.getRuntime().exec("su");
 +        OutputStream os = p.getOutputStream();
 +        // Enter chroot, then replace the shell with goose acp so our pipes
-+        // talk directly to the ACP server.
++        // talk directly to the ACP server. Use a login shell (-lc) so the
++        // user's PATH (e.g. ~/.local/bin where goose lives) is loaded —
++        // non-interactive bash does not source ~/.profile.
 +        os.write((Core.EXECUTE + "'bash'\n").getBytes(StandardCharsets.UTF_8));
-+        os.write("exec goose acp\n".getBytes(StandardCharsets.UTF_8));
++        os.write("exec bash -lc \"goose acp\"\n".getBytes(StandardCharsets.UTF_8));
 +        os.flush();
 +
 +        this.process = p;
@@ -270,6 +272,7 @@ index 0000000..cb1dde8
 +        out.write((line + "\n").getBytes(StandardCharsets.UTF_8));
 +        out.flush();
 +    }
++
 +
 +    private void readLoop(BufferedReader reader) {
 +        try {

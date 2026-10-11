@@ -1,5 +1,5 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
-index cb1dde8..0f153f1 100644
+index f0bc3ad..59d35fb 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
 @@ -97,6 +97,7 @@ public class GooseAcpClient {
@@ -10,7 +10,27 @@ index cb1dde8..0f153f1 100644
          Process p = Runtime.getRuntime().exec("su");
          OutputStream os = p.getOutputStream();
          // Enter chroot, then replace the shell with goose acp so our pipes
-@@ -261,10 +262,17 @@ public class GooseAcpClient {
+@@ -110,6 +111,7 @@ public class GooseAcpClient {
+         this.process = p;
+         this.out = os;
+         this.connected = true;
++        Log.d(TAG, "launching goose acp via login shell");
+ 
+         BufferedReader reader = new BufferedReader(
+                 new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
+@@ -122,7 +124,10 @@ public class GooseAcpClient {
+                 new InputStreamReader(p.getErrorStream(), StandardCharsets.UTF_8));
+         Thread et = new Thread(() -> {
+             try {
+-                while (errReader.readLine() != null) { /* discard */ }
++                String el;
++                while ((el = errReader.readLine()) != null) {
++                    Log.d(TAG, "STDERR: " + el.substring(0, Math.min(300, el.length())));
++                }
+             } catch (IOException ignored) { }
+         }, "goose-acp-stderr");
+         et.setDaemon(true);
+@@ -263,10 +268,16 @@ public class GooseAcpClient {
      private synchronized void send(JSONObject msg) throws IOException {
          if (out == null) throw new IOException("not connected");
          String line = msg.toString();
@@ -24,11 +44,10 @@ index cb1dde8..0f153f1 100644
 +        if (s == null) return "";
 +        return s.length() > n ? s.substring(0, n) + "…" : s;
 +    }
-+
+ 
      private void readLoop(BufferedReader reader) {
          try {
-             String line;
-@@ -278,6 +286,8 @@ public class GooseAcpClient {
+@@ -281,6 +292,8 @@ public class GooseAcpClient {
                      Log.w(TAG, "skipping non-JSON line: " + line.substring(0, Math.min(120, line.length())));
                      continue;
                  }
@@ -37,7 +56,7 @@ index cb1dde8..0f153f1 100644
                  try {
                      handleMessage(msg);
                  } catch (Exception e) {
-@@ -321,8 +331,10 @@ public class GooseAcpClient {
+@@ -324,8 +337,10 @@ public class GooseAcpClient {
              String stopReason = result != null ? result.optString("stopReason", "") : "";
              JSONObject err = msg.optJSONObject("error");
              if (err != null) {
@@ -48,7 +67,7 @@ index cb1dde8..0f153f1 100644
              Listener l = listener;
              if (l != null) l.onTurnEnd(sessionId, stopReason);
              return;
-@@ -369,6 +381,8 @@ public class GooseAcpClient {
+@@ -372,6 +387,8 @@ public class GooseAcpClient {
              }
              Listener l = listener;
              if (l != null) l.onPermissionRequest(requestId, toolCallId, title, command, options);
