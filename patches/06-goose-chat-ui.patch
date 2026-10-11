@@ -355,10 +355,10 @@ index 0000000..ba18847
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..d447121
+index 0000000..1b3f852
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,740 @@
+@@ -0,0 +1,757 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -1005,6 +1005,11 @@ index 0000000..d447121
 +        setStatus("Listing files…");
 +        new Thread(() -> {
 +            List<String> files = GooseFiles.listOutputFiles();
++            // Tambah HTML dari /sdcard/Stryker/ langsung (tanpa chroot)
++            List<String> sdHtml = GooseFiles.listSdcardHtml();
++            for (String h : sdHtml) {
++                if (!files.contains(h)) files.add("[sdcard] " + h);
++            }
 +            List<String> raw = GooseFiles.debugLsRaw();
 +            ui(() -> {
 +                setStatus("Connected · " + sessionId + " · idle");
@@ -1029,6 +1034,9 @@ index 0000000..d447121
 +                        .setMessage("Tap .html to view, others to export to /sdcard/Stryker/goose_files/")
 +                        .setItems(names, (d, which) -> {
 +                            String fn = files.get(which);
++                            // Strip [sdcard] prefix
++                            boolean isSdcard = fn.startsWith("[sdcard] ");
++                            if (isSdcard) fn = fn.substring(9);
 +                            if (fn.toLowerCase().endsWith(".html") ||
 +                                fn.toLowerCase().endsWith(".htm")) {
 +                                openViz(fn);
@@ -1044,8 +1052,17 @@ index 0000000..d447121
 +
 +    /** Open an HTML file in the WebView visualization activity. */
 +    private void openViz(String filename) {
-+        // File ada di /root/goose_output/ dalam chroot.
-+        // WebView butuh path yang bisa diakses — copy dulu ke sdcard temp.
++        // Cek dulu di /sdcard/Stryker/ (langsung), baru coba export dari chroot
++        File sdcardFile = new File("/sdcard/Stryker/" + filename);
++        if (sdcardFile.exists()) {
++            android.content.Intent i = new android.content.Intent(
++                    this, GhostVizActivity.class);
++            i.putExtra(GhostVizActivity.EXTRA_PATH, sdcardFile.getAbsolutePath());
++            i.putExtra(GhostVizActivity.EXTRA_TITLE, filename);
++            startActivity(i);
++            return;
++        }
++        // Fallback: export dari chroot
 +        new Thread(() -> {
 +            String exported = GooseFiles.exportFile(filename);
 +            ui(() -> {
@@ -1101,10 +1118,10 @@ index 0000000..d447121
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
 new file mode 100644
-index 0000000..fde8af7
+index 0000000..ccf9da6
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,135 @@
 +package com.zalexdev.stryker.goose;
 +
 +import com.zalexdev.stryker.utils.Core;
@@ -1178,6 +1195,26 @@ index 0000000..fde8af7
 +    /** Ensure output and export directories exist. */
 +    public static void ensureDirs() {
 +        runChroot("mkdir -p " + OUTPUT_DIR + " " + EXPORT_DIR);
++    }
++
++    /** List HTML files directly from /sdcard/Stryker/ (no chroot needed). */
++    public static List<String> listSdcardHtml() {
++        List<String> files = new ArrayList<>();
++        try {
++            File dir = new File("/sdcard/Stryker");
++            File[] list = dir.listFiles();
++            if (list != null) {
++                for (File f : list) {
++                    if (f.isFile()) {
++                        String n = f.getName().toLowerCase();
++                        if (n.endsWith(".html") || n.endsWith(".htm")) {
++                            files.add(f.getName());
++                        }
++                    }
++                }
++            }
++        } catch (Exception ignored) {}
++        return files;
 +    }
 +
 +    /** Debug: return raw ls output for troubleshooting. */
