@@ -1,8 +1,8 @@
 diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
-index 76de270..b9f5a14 100644
+index 76de270..6d99c75 100644
 --- a/app/src/main/AndroidManifest.xml
 +++ b/app/src/main/AndroidManifest.xml
-@@ -123,6 +123,12 @@
+@@ -123,6 +123,17 @@
              android:name=".utils.LicenseActivity"
              android:exported="false" />
  
@@ -11,6 +11,11 @@ index 76de270..b9f5a14 100644
 +            android:exported="false"
 +            android:configChanges="orientation|screenSize|keyboardHidden"
 +            android:windowSoftInputMode="adjustResize" />
++
++        <activity
++            android:name=".goose.GhostVizActivity"
++            android:exported="false"
++            android:configChanges="orientation|screenSize" />
 +
          <activity
              android:name=".about.ThanksActivity"
@@ -44,10 +49,10 @@ index 1b99e0e..5022f70 100644
              TapTargetView.showFor(activity,
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 new file mode 100644
-index 0000000..8206a30
+index 0000000..54c4973
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-@@ -0,0 +1,143 @@
+@@ -0,0 +1,202 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.view.Gravity;
@@ -74,6 +79,7 @@ index 0000000..8206a30
 +        final LinearLayout bubble;
 +        final MaterialTextView titleView;
 +        final MaterialTextView bodyView;
++        View.OnClickListener expandClickListener;
 +
 +        VH(@NonNull View itemView) {
 +            super(itemView);
@@ -89,20 +95,45 @@ index 0000000..8206a30
 +        View v = LayoutInflater.from(parent.getContext())
 +                .inflate(R.layout.item_chat_message, parent, false);
 +        VH h = new VH(v);
-+        // Click di title DAN bubble (bukan body, karena body textIsSelectable makan touch).
-+        // Title nggak selectable, jadi tap-nya reliable.
++        // Expand listener: dipasang di sini (sekali) + di onBind (backup).
++        // TOOL message nggak selectable, jadi tap reliable.
 +        View.OnClickListener expandListener = view -> {
 +            int pos = h.getAdapterPosition();
 +            if (pos == RecyclerView.NO_POSITION) return;
++            if (pos < 0 || pos >= messages.size()) return;
 +            ChatMessage m = messages.get(pos);
 +            if (m.type == ChatMessage.Type.TOOL) {
 +                m.expanded = !m.expanded;
 +                notifyItemChanged(pos);
 +            }
 +        };
++        h.expandClickListener = expandListener;
 +        h.titleView.setOnClickListener(expandListener);
 +        h.bubble.setOnClickListener(expandListener);
++        h.bodyView.setOnClickListener(expandListener);
++        h.titleView.setClickable(true);
 +        h.bubble.setClickable(true);
++        // Long-press di TOOL message = copy full text ke clipboard
++        View.OnLongClickListener copyListener = view -> {
++            int pos = h.getAdapterPosition();
++            if (pos == RecyclerView.NO_POSITION) return false;
++            if (pos < 0 || pos >= messages.size()) return false;
++            ChatMessage m = messages.get(pos);
++            if (m.type == ChatMessage.Type.TOOL && m.text != null) {
++                android.content.ClipboardManager cm =
++                        (android.content.ClipboardManager) view.getContext()
++                                .getSystemService(android.content.Context.CLIPBOARD_SERVICE);
++                cm.setPrimaryClip(android.content.ClipData.newPlainText(
++                        "tool_output", m.text));
++                android.widget.Toast.makeText(view.getContext(),
++                        "Tool output copied", android.widget.Toast.LENGTH_SHORT).show();
++                return true;
++            }
++            return false;
++        };
++        h.titleView.setOnLongClickListener(copyListener);
++        h.bubble.setOnLongClickListener(copyListener);
++        h.bodyView.setOnLongClickListener(copyListener);
 +        return h;
 +    }
 +
@@ -129,8 +160,21 @@ index 0000000..8206a30
 +        boolean showTitle = m.title != null && !m.title.isEmpty();
 +        h.titleView.setVisibility(showTitle ? View.VISIBLE : View.GONE);
 +        if (showTitle) h.titleView.setText(m.title);
-+        // Note: click listener dipasang di onCreateViewHolder (sekali aja),
-+        // jangan di sini biar nggak ke-reset pas streaming.
++        // Body: textIsSelectable cuma untuk USER & AGENT (biar bisa copy).
++        // TOOL: monospace terminal look, nggak selectable biar tap-to-expand reliable.
++        if (m.type == ChatMessage.Type.TOOL) {
++            h.bodyView.setTextIsSelectable(false);
++            h.bodyView.setClickable(true);
++            h.bodyView.setFocusable(true);
++            h.bodyView.setTypeface(android.graphics.Typeface.MONOSPACE);
++            h.bodyView.setTextSize(12);
++            h.bodyView.setTextColor(0xFF7EE787); // hijau terminal
++        } else {
++            h.bodyView.setTextIsSelectable(true);
++            h.bodyView.setTypeface(android.graphics.Typeface.DEFAULT);
++            h.bodyView.setTextSize(14);
++            h.bodyView.setTextColor(0xFFFFFFFF);
++        }
 +
 +        LinearLayout.LayoutParams lp =
 +                (LinearLayout.LayoutParams) h.bubble.getLayoutParams();
@@ -154,6 +198,26 @@ index 0000000..8206a30
 +                break;
 +        }
 +        h.bubble.setLayoutParams(lp);
++        // Backup: pastikan expand listener kepasang (jaga-jaga kalo onCreate ke-skip)
++        if (m.type == ChatMessage.Type.TOOL && h.expandClickListener != null) {
++            h.titleView.setOnClickListener(h.expandClickListener);
++            h.bubble.setOnClickListener(h.expandClickListener);
++            h.bodyView.setOnClickListener(h.expandClickListener);
++        }
++    }
++
++    /** Mark all running tools as done (update title from ● running to ✓ done). */
++    public void markToolsDone() {
++        boolean changed = false;
++        for (int i = 0; i < messages.size(); i++) {
++            ChatMessage m = messages.get(i);
++            if (m.type == ChatMessage.Type.TOOL && m.title != null &&
++                m.title.contains("● running")) {
++                m.title = m.title.replace("● running", "✓ done");
++                notifyItemChanged(i);
++                changed = true;
++            }
++        }
 +    }
 +
 +    @Override
@@ -221,12 +285,80 @@ index 0000000..11ea223
 +        this.expanded = type != Type.TOOL;
 +    }
 +}
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GhostVizActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GhostVizActivity.java
+new file mode 100644
+index 0000000..ba18847
+--- /dev/null
++++ b/app/src/main/java/com/zalexdev/stryker/goose/GhostVizActivity.java
+@@ -0,0 +1,62 @@
++package com.zalexdev.stryker.goose;
++
++import android.os.Bundle;
++import android.webkit.WebSettings;
++import android.webkit.WebView;
++import android.webkit.WebViewClient;
++
++import androidx.appcompat.app.AppCompatActivity;
++import androidx.appcompat.widget.Toolbar;
++
++import com.zalexdev.stryker.R;
++
++import java.io.File;
++
++/**
++ * Simple WebView to render HTML visualizations generated by Ghost.
++ * Opened from the Files menu when tapping a .html file.
++ */
++public class GhostVizActivity extends AppCompatActivity {
++
++    public static final String EXTRA_PATH = "path";
++    public static final String EXTRA_TITLE = "title";
++
++    @Override
++    protected void onCreate(Bundle savedInstanceState) {
++        super.onCreate(savedInstanceState);
++        setContentView(R.layout.activity_ghost_viz);
++
++        Toolbar toolbar = findViewById(R.id.viz_toolbar);
++        setSupportActionBar(toolbar);
++        if (getSupportActionBar() != null) {
++            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
++        }
++
++        String path = getIntent().getStringExtra(EXTRA_PATH);
++        String title = getIntent().getStringExtra(EXTRA_TITLE);
++        if (title != null && getSupportActionBar() != null) {
++            getSupportActionBar().setTitle(title);
++        }
++
++        WebView webView = findViewById(R.id.viz_webview);
++        WebSettings ws = webView.getSettings();
++        ws.setJavaScriptEnabled(true);
++        ws.setDomStorageEnabled(true);
++        ws.setAllowFileAccess(true);
++        ws.setMediaPlaybackRequiresUserGesture(false);
++        webView.setWebViewClient(new WebViewClient());
++
++        if (path != null) {
++            File f = new File(path);
++            if (f.exists()) {
++                webView.loadUrl("file://" + f.getAbsolutePath());
++            }
++        }
++    }
++
++    @Override
++    public boolean onSupportNavigateUp() {
++        finish();
++        return true;
++    }
++}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..6867119
+index 0000000..8533fc4
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,704 @@
+@@ -0,0 +1,734 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -608,7 +740,7 @@ index 0000000..6867119
 +        ui(() -> {
 +            int pos = adapter.lastPosition() + 1;
 +            adapter.add(new ChatMessage(ChatMessage.Type.TOOL,
-+                    rawInputJson, "⚙ " + title + " — waiting approval"));
++                    rawInputJson, "$ " + title + " — ● running"));
 +            toolPositions.put(toolCallId, pos);
 +            scrollToBottom();
 +        });
@@ -643,6 +775,7 @@ index 0000000..6867119
 +            updateSendButton();
 +            streamingPos = -1;
 +            toolPositions.clear();
++            adapter.markToolsDone();
 +            setStatus("Connected · " + this.sessionId + " · idle");
 +        });
 +    }
@@ -878,7 +1011,7 @@ index 0000000..6867119
 +                    new AlertDialog.Builder(this)
 +                            .setTitle("Output files")
 +                            .setMessage("No files yet in /root/goose_output/.\n\n" +
-+                                    "Ask goose to save files there, e.g.:\n" +
++                                    "Ask Ghost to save files there, e.g.:\n" +
 +                                    "\"save the report to /root/goose_output/report.md\"")
 +                            .setPositiveButton("OK", null)
 +                            .show();
@@ -887,12 +1020,41 @@ index 0000000..6867119
 +                String[] names = files.toArray(new String[0]);
 +                new AlertDialog.Builder(this)
 +                        .setTitle("Output files")
-+                        .setMessage("Tap a file to export to /sdcard/Stryker/goose_files/")
-+                        .setItems(names, (d, which) -> exportFile(files.get(which)))
++                        .setMessage("Tap .html to view, others to export to /sdcard/Stryker/goose_files/")
++                        .setItems(names, (d, which) -> {
++                            String fn = files.get(which);
++                            if (fn.toLowerCase().endsWith(".html") ||
++                                fn.toLowerCase().endsWith(".htm")) {
++                                openViz(fn);
++                            } else {
++                                exportFile(fn);
++                            }
++                        })
 +                        .setNegativeButton("Close", null)
 +                        .show();
 +            });
 +        }, "goose-ls").start();
++    }
++
++    /** Open an HTML file in the WebView visualization activity. */
++    private void openViz(String filename) {
++        // File ada di /root/goose_output/ dalam chroot.
++        // WebView butuh path yang bisa diakses — copy dulu ke sdcard temp.
++        new Thread(() -> {
++            String exported = GooseFiles.exportFile(filename);
++            ui(() -> {
++                if (exported != null) {
++                    android.content.Intent i = new android.content.Intent(
++                            this, GhostVizActivity.class);
++                    i.putExtra(GhostVizActivity.EXTRA_PATH, exported);
++                    i.putExtra(GhostVizActivity.EXTRA_TITLE, filename);
++                    startActivity(i);
++                } else {
++                    Toast.makeText(this, "Failed to open " + filename,
++                            Toast.LENGTH_SHORT).show();
++                }
++            });
++        }, "goose-viz").start();
 +    }
 +
 +    private void exportFile(String filename) {
@@ -1053,15 +1215,15 @@ index 0000000..fd2cacb
 +</shape>
 diff --git a/app/src/main/res/drawable/chat_bubble_tool.xml b/app/src/main/res/drawable/chat_bubble_tool.xml
 new file mode 100644
-index 0000000..5c5c0a3
+index 0000000..badf4ca
 --- /dev/null
 +++ b/app/src/main/res/drawable/chat_bubble_tool.xml
 @@ -0,0 +1,6 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-+    <corners android:radius="12dp" />
-+    <solid android:color="#1A2E1A" />
-+    <stroke android:width="1dp" android:color="#2E5A2E" />
++    <corners android:radius="8dp" />
++    <solid android:color="#0D1117" />
++    <stroke android:width="1dp" android:color="#30363D" />
 +</shape>
 diff --git a/app/src/main/res/drawable/chat_bubble_user.xml b/app/src/main/res/drawable/chat_bubble_user.xml
 new file mode 100644
@@ -1103,6 +1265,32 @@ index 0000000..ce2028f
 +        android:pathData="M15,10m-1.5,0a1.5,1.5 0,1 1,3 0a1.5,1.5 0,1 1,-3 0" />
 +
 +</vector>
+diff --git a/app/src/main/res/layout/activity_ghost_viz.xml b/app/src/main/res/layout/activity_ghost_viz.xml
+new file mode 100644
+index 0000000..91181c1
+--- /dev/null
++++ b/app/src/main/res/layout/activity_ghost_viz.xml
+@@ -0,0 +1,20 @@
++<?xml version="1.0" encoding="utf-8"?>
++<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent"
++    android:orientation="vertical">
++
++    <com.google.android.material.appbar.MaterialToolbar
++        android:id="@+id/viz_toolbar"
++        android:layout_width="match_parent"
++        android:layout_height="?attr/actionBarSize"
++        app:title="Visualization" />
++
++    <WebView
++        android:id="@+id/viz_webview"
++        android:layout_width="match_parent"
++        android:layout_height="0dp"
++        android:layout_weight="1" />
++
++</LinearLayout>
 diff --git a/app/src/main/res/layout/activity_goose_chat.xml b/app/src/main/res/layout/activity_goose_chat.xml
 new file mode 100644
 index 0000000..d25a677
