@@ -1,9 +1,9 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
 new file mode 100644
-index 0000000..ac47aae
+index 0000000..9e40dd5
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
-@@ -0,0 +1,564 @@
+@@ -0,0 +1,582 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.util.Log;
@@ -283,15 +283,33 @@ index 0000000..ac47aae
 +
 +    /** Send a user prompt. Results stream back via Listener (async). */
 +    public void prompt(String sessionId, String text) throws IOException, JSONException {
++        promptWithImage(sessionId, text, null, null);
++    }
++
++    /**
++     * Send a prompt with optional image. imageBase64 is base64-encoded image data,
++     * mimeType e.g. "image/jpeg". If imageBase64 is null, sends text only.
++     */
++    public void promptWithImage(String sessionId, String text, String imageBase64, String mimeType)
++            throws IOException, JSONException {
 +        int id = nextId.getAndIncrement();
 +        promptSessions.put(id, sessionId);
 +        JSONObject params = new JSONObject();
 +        params.put("sessionId", sessionId);
 +        JSONArray prompt = new JSONArray();
-+        JSONObject block = new JSONObject();
-+        block.put("type", "text");
-+        block.put("text", text);
-+        prompt.put(block);
++        if (imageBase64 != null && mimeType != null) {
++            JSONObject imgBlock = new JSONObject();
++            imgBlock.put("type", "image");
++            imgBlock.put("mimeType", mimeType);
++            imgBlock.put("data", imageBase64);
++            prompt.put(imgBlock);
++        }
++        if (text != null && !text.isEmpty()) {
++            JSONObject block = new JSONObject();
++            block.put("type", "text");
++            block.put("text", text);
++            prompt.put(block);
++        }
 +        params.put("prompt", prompt);
 +        JSONObject msg = new JSONObject();
 +        msg.put("jsonrpc", "2.0");

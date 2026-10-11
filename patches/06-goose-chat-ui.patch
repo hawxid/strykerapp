@@ -44,10 +44,10 @@ index 1b99e0e..030ecca 100644
              TapTargetView.showFor(activity,
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 new file mode 100644
-index 0000000..441d47c
+index 0000000..ff8585e
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,136 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.view.Gravity;
@@ -94,11 +94,36 @@ index 0000000..441d47c
 +    @Override
 +    public void onBindViewHolder(@NonNull VH h, int position) {
 +        ChatMessage m = messages.get(position);
-+        h.bodyView.setText(m.text != null ? m.text : "");
++
++        // Collapsible TOOL output: collapsed = first 5 lines + hint
++        String displayText = m.text != null ? m.text : "";
++        if (m.type == ChatMessage.Type.TOOL && !m.expanded) {
++            String[] lines = displayText.split("\n");
++            if (lines.length > 5) {
++                StringBuilder sb = new StringBuilder();
++                for (int i = 0; i < 5; i++) sb.append(lines[i]).append("\n");
++                sb.append("… (").append(lines.length - 5)
++                  .append(" more lines — tap to expand)");
++                displayText = sb.toString();
++            } else if (!displayText.isEmpty()) {
++                displayText += "\n(tap to expand)";
++            }
++        }
++        h.bodyView.setText(displayText);
 +
 +        boolean showTitle = m.title != null && !m.title.isEmpty();
 +        h.titleView.setVisibility(showTitle ? View.VISIBLE : View.GONE);
 +        if (showTitle) h.titleView.setText(m.title);
++
++        // Tap TOOL message to expand/collapse
++        if (m.type == ChatMessage.Type.TOOL) {
++            h.itemView.setOnClickListener(v -> {
++                m.expanded = !m.expanded;
++                notifyItemChanged(position);
++            });
++        } else {
++            h.itemView.setOnClickListener(null);
++        }
 +
 +        LinearLayout.LayoutParams lp =
 +                (LinearLayout.LayoutParams) h.bubble.getLayoutParams();
@@ -161,10 +186,10 @@ index 0000000..441d47c
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatMessage.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatMessage.java
 new file mode 100644
-index 0000000..fcb0427
+index 0000000..11ea223
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatMessage.java
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,24 @@
 +package com.zalexdev.stryker.goose;
 +
 +/** Single chat message (user, agent, tool, or system). */
@@ -175,6 +200,7 @@ index 0000000..fcb0427
 +    public final Type type;
 +    public String text;
 +    public String title; // tool name / status for TOOL messages
++    public boolean expanded = false; // for collapsible TOOL output
 +
 +    public ChatMessage(Type type, String text) {
 +        this(type, text, null);
@@ -184,18 +210,27 @@ index 0000000..fcb0427
 +        this.type = type;
 +        this.text = text;
 +        this.title = title;
++        // TOOL messages start collapsed
++        this.expanded = type != Type.TOOL;
 +    }
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..e919a1a
+index 0000000..ade45e3
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,452 @@
+@@ -0,0 +1,601 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
++import android.content.Intent;
++import android.graphics.Bitmap;
++import android.graphics.BitmapFactory;
++import android.net.Uri;
 +import android.os.Bundle;
++import android.provider.MediaStore;
++import android.util.Base64;
++import android.widget.ImageButton;
 +import android.widget.Toast;
 +
 +import androidx.appcompat.app.AppCompatActivity;
@@ -208,6 +243,8 @@ index 0000000..e919a1a
 +import com.google.android.material.textview.MaterialTextView;
 +import com.zalexdev.stryker.R;
 +
++import java.io.ByteArrayOutputStream;
++import java.io.InputStream;
 +import java.util.ArrayList;
 +import java.util.HashMap;
 +import java.util.List;
@@ -221,6 +258,7 @@ index 0000000..e919a1a
 +public class GooseChatActivity extends AppCompatActivity implements GooseAcpClient.Listener {
 +
 +    private static final String WORK_DIR = "/root";
++    private static final int REQ_PICK_IMAGE = 1001;
 +
 +    private GooseAcpClient client;
 +    private String sessionId;
@@ -231,6 +269,11 @@ index 0000000..e919a1a
 +    private MaterialTextView statusView;
 +    private TextInputEditText inputView;
 +    private MaterialButton sendButton;
++    private ImageButton attachButton;
++
++    // Pending image to send (base64 + mime)
++    private String pendingImageBase64;
++    private String pendingImageMime;
 +
 +    private int streamingPos = -1;
 +    private final Map<String, Integer> toolPositions = new HashMap<>();
@@ -248,6 +291,10 @@ index 0000000..e919a1a
 +                showSessionsDialog();
 +                return true;
 +            }
++            if (item.getItemId() == R.id.goose_menu_files) {
++                showFilesDialog();
++                return true;
++            }
 +            return false;
 +        });
 +
@@ -255,6 +302,7 @@ index 0000000..e919a1a
 +        messagesView = findViewById(R.id.goose_messages);
 +        inputView = findViewById(R.id.goose_input);
 +        sendButton = findViewById(R.id.goose_send);
++        attachButton = findViewById(R.id.goose_attach);
 +
 +        adapter = new ChatAdapter();
 +        LinearLayoutManager lm = new LinearLayoutManager(this);
@@ -262,7 +310,8 @@ index 0000000..e919a1a
 +        messagesView.setLayoutManager(lm);
 +        messagesView.setAdapter(adapter);
 +
-+        sendButton.setOnClickListener(v -> sendPrompt());
++        sendButton.setOnClickListener(v -> onSendOrCancel());
++        attachButton.setOnClickListener(v -> pickImage());
 +
 +        addSystem("Starting goose…");
 +        new Thread(this::connectBlocking, "goose-connect").start();
@@ -316,18 +365,101 @@ index 0000000..e919a1a
 +    }
 +
 +    // ------------------------------------------------------------------
-+    // Sending
++    // Sending / Cancel / Attach
 +    // ------------------------------------------------------------------
++
++    private void onSendOrCancel() {
++        if (working) {
++            cancelTurn();
++        } else {
++            sendPrompt();
++        }
++    }
++
++    private void updateSendButton() {
++        if (working) {
++            sendButton.setText("Cancel");
++            updateSendButton();
++        } else {
++            sendButton.setText("Send");
++            updateSendButton();
++        }
++    }
++
++    private void cancelTurn() {
++        if (client == null || sessionId == null) return;
++        new Thread(() -> {
++            try {
++                client.cancel(sessionId);
++            } catch (Exception ignored) {}
++        }, "goose-cancel").start();
++        ui(() -> addSystem("Cancel requested…"));
++    }
++
++    private void pickImage() {
++        Intent i = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
++        i.setType("image/*");
++        startActivityForResult(i, REQ_PICK_IMAGE);
++    }
++
++    @Override
++    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
++        super.onActivityResult(requestCode, resultCode, data);
++        if (requestCode == REQ_PICK_IMAGE && resultCode == RESULT_OK && data != null) {
++            Uri uri = data.getData();
++            if (uri == null) return;
++            new Thread(() -> {
++                try {
++                    InputStream is = getContentResolver().openInputStream(uri);
++                    Bitmap bmp = BitmapFactory.decodeStream(is);
++                    if (is != null) is.close();
++                    if (bmp == null) {
++                        ui(() -> Toast.makeText(this, "Could not read image",
++                                Toast.LENGTH_SHORT).show());
++                        return;
++                    }
++                    // Resize biar nggak kegedean (max 1024px)
++                    int w = bmp.getWidth(), h = bmp.getHeight();
++                    float scale = Math.min(1.0f, 1024.0f / Math.max(w, h));
++                    if (scale < 1.0f) {
++                        bmp = Bitmap.createScaledBitmap(bmp,
++                                (int)(w*scale), (int)(h*scale), true);
++                    }
++                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
++                    bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos);
++                    byte[] bytes = baos.toByteArray();
++                    pendingImageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
++                    pendingImageMime = "image/jpeg";
++                    ui(() -> {
++                        Toast.makeText(this, "Image attached — tap Send",
++                                Toast.LENGTH_SHORT).show();
++                        inputView.setHint("Ask about the image…");
++                    });
++                } catch (Exception e) {
++                    ui(() -> Toast.makeText(this, "Attach failed: " + e.getMessage(),
++                            Toast.LENGTH_SHORT).show());
++                }
++            }, "goose-attach").start();
++        }
++    }
 +
 +    private void sendPrompt() {
 +        if (working || client == null || sessionId == null) return;
 +        String text = inputView.getText() != null ? inputView.getText().toString().trim() : "";
-+        if (text.isEmpty()) return;
++        String img64 = pendingImageBase64;
++        String imgMime = pendingImageMime;
++        if (text.isEmpty() && img64 == null) return;
 +        inputView.setText("");
++        inputView.setHint("Ask goose…");
++        pendingImageBase64 = null;
++        pendingImageMime = null;
 +        working = true;
-+        sendButton.setEnabled(false);
++        updateSendButton();
++        final String fText = text;
++        final boolean hasImage = img64 != null;
 +        ui(() -> {
-+            adapter.add(new ChatMessage(ChatMessage.Type.USER, text));
++            String display = fText.isEmpty() ? "[image]" : fText + (hasImage ? " [image]" : "");
++            adapter.add(new ChatMessage(ChatMessage.Type.USER, display));
 +            scrollToBottom();
 +            streamingPos = adapter.lastPosition() + 1;
 +            adapter.add(new ChatMessage(ChatMessage.Type.AGENT, ""));
@@ -335,12 +467,12 @@ index 0000000..e919a1a
 +        });
 +        new Thread(() -> {
 +            try {
-+                client.prompt(sessionId, text);
++                client.promptWithImage(sessionId, fText, img64, imgMime);
 +            } catch (Exception e) {
 +                ui(() -> {
 +                    addSystem("Send failed: " + e.getMessage());
 +                    working = false;
-+                    sendButton.setEnabled(true);
++                    updateSendButton();
 +                });
 +            }
 +        }, "goose-prompt").start();
@@ -398,7 +530,7 @@ index 0000000..e919a1a
 +    public void onTurnEnd(String sessionId, String stopReason) {
 +        ui(() -> {
 +            working = false;
-+            sendButton.setEnabled(true);
++            updateSendButton();
 +            streamingPos = -1;
 +            toolPositions.clear();
 +            setStatus("Connected · " + this.sessionId + " · idle");
@@ -426,7 +558,7 @@ index 0000000..e919a1a
 +            setStatus("Disconnected");
 +            addSystem("goose acp process ended.");
 +            working = false;
-+            sendButton.setEnabled(false);
++            updateSendButton();
 +        });
 +    }
 +
@@ -623,6 +755,51 @@ index 0000000..e919a1a
 +    }
 +
 +    // ------------------------------------------------------------------
++    // Output files (download from chroot)
++    // ------------------------------------------------------------------
++
++    private void showFilesDialog() {
++        setStatus("Listing files…");
++        new Thread(() -> {
++            List<String> files = GooseFiles.listOutputFiles();
++            ui(() -> {
++                setStatus("Connected · " + sessionId + " · idle");
++                if (files.isEmpty()) {
++                    new AlertDialog.Builder(this)
++                            .setTitle("Output files")
++                            .setMessage("No files yet in /root/goose_output/.\n\n" +
++                                    "Ask goose to save files there, e.g.:\n" +
++                                    "\"save the report to /root/goose_output/report.md\"")
++                            .setPositiveButton("OK", null)
++                            .show();
++                    return;
++                }
++                String[] names = files.toArray(new String[0]);
++                new AlertDialog.Builder(this)
++                        .setTitle("Output files")
++                        .setMessage("Tap a file to export to /sdcard/Stryker/goose_files/")
++                        .setItems(names, (d, which) -> exportFile(files.get(which)))
++                        .setNegativeButton("Close", null)
++                        .show();
++            });
++        }, "goose-ls").start();
++    }
++
++    private void exportFile(String filename) {
++        new Thread(() -> {
++            String path = GooseFiles.exportFile(filename);
++            ui(() -> {
++                if (path != null) {
++                    Toast.makeText(this, "Saved to " + path, Toast.LENGTH_LONG).show();
++                    addSystem("File exported: " + path);
++                } else {
++                    Toast.makeText(this, "Export failed", Toast.LENGTH_SHORT).show();
++                }
++            });
++        }, "goose-export").start();
++    }
++
++    // ------------------------------------------------------------------
 +    // UI helpers
 +    // ------------------------------------------------------------------
 +
@@ -642,6 +819,91 @@ index 0000000..e919a1a
 +    private void scrollToBottom() {
 +        int last = adapter.lastPosition();
 +        if (last >= 0) messagesView.smoothScrollToPosition(last);
++    }
++}
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
+new file mode 100644
+index 0000000..de7ec46
+--- /dev/null
++++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
+@@ -0,0 +1,79 @@
++package com.zalexdev.stryker.goose;
++
++import com.zalexdev.stryker.utils.Core;
++
++import java.io.BufferedReader;
++import java.io.InputStreamReader;
++import java.io.OutputStream;
++import java.nio.charset.StandardCharsets;
++import java.util.ArrayList;
++import java.util.List;
++
++/**
++ * File operations inside the Debian chroot for Goose output files.
++ * Goose saves generated files to /root/goose_output/; this helper
++ * lists them and exports to /sdcard for download.
++ */
++public class GooseFiles {
++
++    public static final String OUTPUT_DIR = "/root/goose_output";
++    public static final String EXPORT_DIR = "/sdcard/Stryker/goose_files";
++
++    /** Run a command in the chroot via su, return stdout lines. */
++    private static List<String> runChroot(String cmd) {
++        List<String> out = new ArrayList<>();
++        try {
++            Process p = Runtime.getRuntime().exec("su");
++            OutputStream os = p.getOutputStream();
++            os.write((Core.EXECUTE + "'" + cmd + "'\n").getBytes(StandardCharsets.UTF_8));
++            os.flush();
++            os.close();
++            BufferedReader r = new BufferedReader(
++                    new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
++            String line;
++            while ((line = r.readLine()) != null) {
++                out.add(line);
++            }
++            p.waitFor();
++        } catch (Exception ignored) {}
++        return out;
++    }
++
++    /** Ensure output and export directories exist. */
++    public static void ensureDirs() {
++        runChroot("mkdir -p " + OUTPUT_DIR + " " + EXPORT_DIR);
++    }
++
++    /** List files in the goose output directory. */
++    public static List<String> listOutputFiles() {
++        ensureDirs();
++        List<String> files = new ArrayList<>();
++        List<String> lines = runChroot("ls -1p " + OUTPUT_DIR + " 2>/dev/null");
++        for (String l : lines) {
++            l = l.trim();
++            if (!l.isEmpty() && !l.endsWith("/")) {
++                files.add(l);
++            }
++        }
++        return files;
++    }
++
++    /**
++     * Copy a file from chroot output dir to /sdcard for download.
++     * Returns the export path on success, null on failure.
++     */
++    public static String exportFile(String filename) {
++        // Sanitize: no path traversal
++        if (filename.contains("/") || filename.contains("..")) return null;
++        ensureDirs();
++        List<String> res = runChroot(
++                "cp " + OUTPUT_DIR + "/" + filename + " " + EXPORT_DIR + "/" + filename +
++                " && echo OK");
++        for (String l : res) {
++            if (l.trim().equals("OK")) {
++                return EXPORT_DIR + "/" + filename;
++            }
++        }
++        return null;
 +    }
 +}
 diff --git a/app/src/main/res/drawable/chat_bubble_agent.xml b/app/src/main/res/drawable/chat_bubble_agent.xml
@@ -693,10 +955,10 @@ index 0000000..0fdd2b3
 +</shape>
 diff --git a/app/src/main/res/layout/activity_goose_chat.xml b/app/src/main/res/layout/activity_goose_chat.xml
 new file mode 100644
-index 0000000..ca072bc
+index 0000000..87eceaf
 --- /dev/null
 +++ b/app/src/main/res/layout/activity_goose_chat.xml
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,81 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
 +    xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -742,6 +1004,15 @@ index 0000000..ca072bc
 +        android:gravity="center_vertical"
 +        android:orientation="horizontal"
 +        android:padding="12dp">
++
++        <ImageButton
++            android:id="@+id/goose_attach"
++            android:layout_width="48dp"
++            android:layout_height="48dp"
++            android:layout_marginEnd="4dp"
++            android:background="?attr/selectableItemBackgroundBorderless"
++            android:contentDescription="Attach image"
++            android:src="@drawable/chat" />
 +
 +        <com.google.android.material.textfield.TextInputLayout
 +            android:layout_width="0dp"
@@ -820,13 +1091,18 @@ index 0000000..5d6a1e8
 +</LinearLayout>
 diff --git a/app/src/main/res/menu/goose_chat_menu.xml b/app/src/main/res/menu/goose_chat_menu.xml
 new file mode 100644
-index 0000000..1e8e36d
+index 0000000..8595272
 --- /dev/null
 +++ b/app/src/main/res/menu/goose_chat_menu.xml
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,14 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<menu xmlns:android="http://schemas.android.com/apk/res/android"
 +    xmlns:app="http://schemas.android.com/apk/res-auto">
++    <item
++        android:id="@+id/goose_menu_files"
++        android:title="Files"
++        android:icon="@drawable/chat"
++        app:showAsAction="ifRoom" />
 +    <item
 +        android:id="@+id/goose_menu_sessions"
 +        android:title="Sessions"

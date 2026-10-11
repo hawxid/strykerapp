@@ -1,5 +1,5 @@
 diff --git a/app/src/main/res/layout/activity_goose_chat.xml b/app/src/main/res/layout/activity_goose_chat.xml
-index ca072bc..ad8ac08 100644
+index 87eceaf..d89f2f1 100644
 --- a/app/src/main/res/layout/activity_goose_chat.xml
 +++ b/app/src/main/res/layout/activity_goose_chat.xml
 @@ -13,7 +13,7 @@
