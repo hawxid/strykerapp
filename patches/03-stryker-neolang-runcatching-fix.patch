@@ -1,0 +1,83 @@
+diff --git a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/comp.kt b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/comp.kt
+index a66e379..fb33202 100644
+--- a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/comp.kt
++++ b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/comp.kt
+@@ -103,8 +103,17 @@ class ColorSchemeComponent : ConfigFileBasedComponent<NeoColorScheme>(NeoTermPat
+     setCurrentColorScheme(color.colorName)
+   }
+ 
+-  private fun extractDefaultColor(context: Context) =
+-    kotlin.runCatching { context.extractAssetsDir("colors", baseDir) }.isSuccess
++  // NOTE: jangan pakai kotlin.runCatching{}.isSuccess — R8 me-miscompile kotlin.Result
++  // (isSuccess selalu false, terbukti di device 2026-10-11). Ground truth: file hasil
++  // extract ada atau tidak.
++  private fun extractDefaultColor(context: Context): Boolean {
++    return try {
++      context.extractAssetsDir("colors", baseDir)
++      colorFile(DefaultColorScheme.colorName).exists()
++    } catch (_: Throwable) {
++      false
++    }
++  }
+ 
+   fun saveColorScheme(colorScheme: NeoColorScheme) {
+     val colorFile = colorFile(colorScheme.colorName)
+@@ -115,13 +124,15 @@ class ColorSchemeComponent : ConfigFileBasedComponent<NeoColorScheme>(NeoTermPat
+     val component = ComponentManager.getComponent<CodeGenComponent>()
+     val content = component.newGenerator(colorScheme).generateCode(colorScheme)
+ 
+-    kotlin.runCatching {
++    // NOTE: jangan pakai runCatching{}.onFailure — pola Result yang sama terbukti
++    // di-miscompile R8 (lihat parseConfigure). try/catch biasa:
++    try {
+       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+         Files.write(colorFile.toPath(), content.toByteArray())
+       } else {
+         return
+       }
+-    }.onFailure {
++    } catch (_: Throwable) {
+       throw RuntimeException("Failed to save file ${colorFile.absolutePath}")
+     }
+   }
+diff --git a/terminal/src/main/java/com/stryker/terminal/component/config/comp.kt b/terminal/src/main/java/com/stryker/terminal/component/config/comp.kt
+index e214b4b..3541181 100644
+--- a/terminal/src/main/java/com/stryker/terminal/component/config/comp.kt
++++ b/terminal/src/main/java/com/stryker/terminal/component/config/comp.kt
+@@ -50,18 +50,25 @@ open class NeoConfigureFile(val configureFile: File) {
+ 
+   fun getVisitor() = configVisitor ?: throw IllegalStateException("Configure file not loaded or parse failed.")
+ 
+-  open fun parseConfigure() = kotlin.runCatching {
+-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-      val programCode = String(Files.readAllBytes(configureFile.toPath()))
+-      configParser.setInputSource(programCode)
+-
+-      val ast = configParser.parse()
+-      val astVisitor = ast.visit().getVisitor(ConfigVisitor::class.java) ?: return false
+-      astVisitor.start()
+-      configVisitor = astVisitor.getCallback()
++  // NOTE: jangan pakai kotlin.runCatching{}.isSuccess di sini — R8 di toolchain ini
++  // me-miscompile kotlin.Result sehingga isSuccess selalu false (terbukti di device
++  // 2026-10-11: semua file .nl gagal parse padahal tidak ada exception).
++  open fun parseConfigure(): Boolean {
++    return try {
++      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
++        val programCode = String(Files.readAllBytes(configureFile.toPath()))
++        configParser.setInputSource(programCode)
++
++        val ast = configParser.parse()
++        val astVisitor = ast.visit().getVisitor(ConfigVisitor::class.java) ?: return false
++        astVisitor.start()
++        configVisitor = astVisitor.getCallback()
++      }
++      true
++    } catch (_: Throwable) {
++      false
+     }
+-
+-  }.isSuccess
++  }
+ }
+ 
+ object NeoPreference {
