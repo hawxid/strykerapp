@@ -1,5 +1,5 @@
 diff --git a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
-index db84977..05eef7f 100644
+index db84977..6f473eb 100644
 --- a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
 +++ b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
 @@ -28,6 +28,10 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
@@ -55,7 +55,7 @@ index db84977..05eef7f 100644
 +              (raw.height * scale).toInt(),
 +              true
 +            )
-+            bitmap.density = android.util.DisplayMetrics.DENSITY_NONE
++            bitmap.density = android.graphics.Bitmap.DENSITY_NONE
 +            raw.recycle()
 +            bgDbg("scaled cover to ${bitmap.width}x${bitmap.height} for ${dm.widthPixels}x${dm.heightPixels}")
 +            cachedBgBitmap = bitmap
