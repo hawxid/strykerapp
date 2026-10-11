@@ -44,10 +44,10 @@ index 1b99e0e..030ecca 100644
              TapTargetView.showFor(activity,
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 new file mode 100644
-index 0000000..ff8585e
+index 0000000..37718af
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-@@ -0,0 +1,136 @@
+@@ -0,0 +1,139 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.view.Gravity;
@@ -88,7 +88,18 @@ index 0000000..ff8585e
 +    public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
 +        View v = LayoutInflater.from(parent.getContext())
 +                .inflate(R.layout.item_chat_message, parent, false);
-+        return new VH(v);
++        VH h = new VH(v);
++        // Click listener sekali di sini (bukan di onBind) biar nggak ke-reset pas streaming
++        h.itemView.setOnClickListener(view -> {
++            int pos = h.getAdapterPosition();
++            if (pos == RecyclerView.NO_POSITION) return;
++            ChatMessage m = messages.get(pos);
++            if (m.type == ChatMessage.Type.TOOL) {
++                m.expanded = !m.expanded;
++                notifyItemChanged(pos);
++            }
++        });
++        return h;
 +    }
 +
 +    @Override
@@ -114,16 +125,8 @@ index 0000000..ff8585e
 +        boolean showTitle = m.title != null && !m.title.isEmpty();
 +        h.titleView.setVisibility(showTitle ? View.VISIBLE : View.GONE);
 +        if (showTitle) h.titleView.setText(m.title);
-+
-+        // Tap TOOL message to expand/collapse
-+        if (m.type == ChatMessage.Type.TOOL) {
-+            h.itemView.setOnClickListener(v -> {
-+                m.expanded = !m.expanded;
-+                notifyItemChanged(position);
-+            });
-+        } else {
-+            h.itemView.setOnClickListener(null);
-+        }
++        // Note: click listener dipasang di onCreateViewHolder (sekali aja),
++        // jangan di sini biar nggak ke-reset pas streaming.
 +
 +        LinearLayout.LayoutParams lp =
 +                (LinearLayout.LayoutParams) h.bubble.getLayoutParams();
@@ -216,10 +219,10 @@ index 0000000..11ea223
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..560d50a
+index 0000000..ae48fa8
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,657 @@
+@@ -0,0 +1,698 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -231,6 +234,7 @@ index 0000000..560d50a
 +import android.provider.MediaStore;
 +import android.util.Base64;
 +import android.widget.ImageButton;
++import android.widget.LinearLayout;
 +import android.widget.Toast;
 +
 +import androidx.appcompat.app.AppCompatActivity;
@@ -270,12 +274,16 @@ index 0000000..560d50a
 +    private TextInputEditText inputView;
 +    private MaterialButton sendButton;
 +    private ImageButton attachButton;
++    private LinearLayout attachBar;
++    private MaterialTextView attachNameView;
++    private ImageButton attachClearButton;
 +
 +    // Pending image to send (base64 + mime)
 +    private String pendingImageBase64;
 +    private String pendingImageMime;
 +    // Pending text file content
 +    private String pendingTextFile;
++    private String pendingFileName;
 +
 +    private int streamingPos = -1;
 +    private final Map<String, Integer> toolPositions = new HashMap<>();
@@ -305,6 +313,10 @@ index 0000000..560d50a
 +        inputView = findViewById(R.id.goose_input);
 +        sendButton = findViewById(R.id.goose_send);
 +        attachButton = findViewById(R.id.goose_attach);
++        attachBar = findViewById(R.id.goose_attach_bar);
++        attachNameView = findViewById(R.id.goose_attach_name);
++        attachClearButton = findViewById(R.id.goose_attach_clear);
++        attachClearButton.setOnClickListener(v -> clearAttachment());
 +
 +        adapter = new ChatAdapter();
 +        LinearLayoutManager lm = new LinearLayoutManager(this);
@@ -403,6 +415,27 @@ index 0000000..560d50a
 +        ui(() -> addSystem("Cancel requested…"));
 +    }
 +
++    private void showAttachBar(String filename) {
++        ui(() -> {
++            attachNameView.setText("📎 " + filename);
++            attachBar.setVisibility(android.view.View.VISIBLE);
++        });
++    }
++
++    private void hideAttachBar() {
++        if (attachBar != null) attachBar.setVisibility(android.view.View.GONE);
++    }
++
++    private void clearAttachment() {
++        pendingImageBase64 = null;
++        pendingImageMime = null;
++        pendingTextFile = null;
++        pendingFileName = null;
++        hideAttachBar();
++        inputView.setHint("Ask goose…");
++        Toast.makeText(this, "Attachment removed", Toast.LENGTH_SHORT).show();
++    }
++
 +    private void pickImage() {
 +        Intent i = new Intent(Intent.ACTION_GET_CONTENT);
 +        i.setType("*/*");
@@ -442,9 +475,9 @@ index 0000000..560d50a
 +                        pendingImageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
 +                        pendingImageMime = "image/jpeg";
 +                        pendingTextFile = null;
++                        pendingFileName = "image.jpg";
 +                        ui(() -> {
-+                            Toast.makeText(this, "Image attached — tap Send",
-+                                    Toast.LENGTH_SHORT).show();
++                            showAttachBar("image.jpg");
 +                            inputView.setHint("Ask about the image…");
 +                        });
 +                    } else {
@@ -472,12 +505,12 @@ index 0000000..560d50a
 +                            }
 +                        } catch (Exception ignored) {}
 +                        pendingTextFile = "File: " + name + "\n```\n" + content + "\n```\n";
++                        pendingFileName = name;
 +                        pendingImageBase64 = null;
 +                        pendingImageMime = null;
 +                        final String fName = name;
 +                        ui(() -> {
-+                            Toast.makeText(this, "File attached: " + fName + " — tap Send",
-+                                    Toast.LENGTH_SHORT).show();
++                            showAttachBar(fName);
 +                            inputView.setHint("Ask about " + fName + "…");
 +                        });
 +                    }
@@ -492,26 +525,37 @@ index 0000000..560d50a
 +    private void sendPrompt() {
 +        try {
 +        if (working || client == null || sessionId == null) return;
-+        String text = inputView.getText() != null ? inputView.getText().toString().trim() : "";
++        String userText = inputView.getText() != null ? inputView.getText().toString().trim() : "";
 +        String img64 = pendingImageBase64;
 +        String imgMime = pendingImageMime;
 +        String textFile = pendingTextFile;
-+        if (text.isEmpty() && img64 == null && textFile == null) return;
-+        // Gabung file teks ke prompt
++        String fileName = pendingFileName;
++        if (userText.isEmpty() && img64 == null && textFile == null) return;
++        // Prompt lengkap (dengan isi file) untuk goose
++        String fullText = userText;
 +        if (textFile != null) {
-+            text = textFile + (text.isEmpty() ? "" : "\n" + text);
++            fullText = textFile + (userText.isEmpty() ? "" : "\n" + userText);
++        }
++        // Display untuk chat (cuma nama file, jangan dump isi)
++        final String display;
++        if (fileName != null) {
++            display = "📎 " + fileName + (userText.isEmpty() ? "" : "\n" + userText);
++        } else if (img64 != null) {
++            display = (userText.isEmpty() ? "" : userText + " ") + "🖼 [image]";
++        } else {
++            display = userText;
 +        }
 +        inputView.setText("");
 +        inputView.setHint("Ask goose…");
++        hideAttachBar();
 +        pendingImageBase64 = null;
 +        pendingImageMime = null;
 +        pendingTextFile = null;
++        pendingFileName = null;
 +        working = true;
 +        updateSendButton();
-+        final String fText = text;
-+        final boolean hasImage = img64 != null;
++        final String fText = fullText;
 +        ui(() -> {
-+            String display = fText.isEmpty() ? "[image]" : fText + (hasImage ? " [image]" : "");
 +            adapter.add(new ChatMessage(ChatMessage.Type.USER, display));
 +            scrollToBottom();
 +            streamingPos = adapter.lastPosition() + 1;
@@ -1011,10 +1055,10 @@ index 0000000..0fdd2b3
 +</shape>
 diff --git a/app/src/main/res/layout/activity_goose_chat.xml b/app/src/main/res/layout/activity_goose_chat.xml
 new file mode 100644
-index 0000000..6de0445
+index 0000000..ce1911e
 --- /dev/null
 +++ b/app/src/main/res/layout/activity_goose_chat.xml
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,112 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
 +    xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -1053,6 +1097,37 @@ index 0000000..6de0445
 +        android:clipToPadding="false"
 +        android:paddingBottom="12dp"
 +        android:scrollbars="none" />
++
++    <!-- Attachment bar (muncul kalo ada file di-attach) -->
++    <LinearLayout
++        android:id="@+id/goose_attach_bar"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:gravity="center_vertical"
++        android:orientation="horizontal"
++        android:paddingStart="12dp"
++        android:paddingEnd="12dp"
++        android:paddingTop="4dp"
++        android:paddingBottom="4dp"
++        android:visibility="gone">
++
++        <com.google.android.material.textview.MaterialTextView
++            android:id="@+id/goose_attach_name"
++            android:layout_width="0dp"
++            android:layout_height="wrap_content"
++            android:layout_weight="1"
++            android:text="📎 file"
++            android:textSize="13sp" />
++
++        <ImageButton
++            android:id="@+id/goose_attach_clear"
++            android:layout_width="32dp"
++            android:layout_height="32dp"
++            android:background="?attr/selectableItemBackgroundBorderless"
++            android:contentDescription="Remove attachment"
++            android:src="@drawable/close" />
++
++    </LinearLayout>
 +
 +    <LinearLayout
 +        android:layout_width="match_parent"
