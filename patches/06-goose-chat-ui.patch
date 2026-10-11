@@ -355,10 +355,10 @@ index 0000000..ba18847
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..8533fc4
+index 0000000..d447121
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,734 @@
+@@ -0,0 +1,740 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -1005,14 +1005,20 @@ index 0000000..8533fc4
 +        setStatus("Listing files…");
 +        new Thread(() -> {
 +            List<String> files = GooseFiles.listOutputFiles();
++            List<String> raw = GooseFiles.debugLsRaw();
 +            ui(() -> {
 +                setStatus("Connected · " + sessionId + " · idle");
 +                if (files.isEmpty()) {
++                    StringBuilder dbg = new StringBuilder();
++                    dbg.append("No files yet in /root/goose_output/.\n\n");
++                    dbg.append("DEBUG raw ls output (").append(raw.size()).append(" lines):\n");
++                    for (int i = 0; i < Math.min(raw.size(), 5); i++) {
++                        dbg.append("[").append(raw.get(i)).append("]\n");
++                    }
++                    if (raw.isEmpty()) dbg.append("(empty - no output at all)\n");
 +                    new AlertDialog.Builder(this)
-+                            .setTitle("Output files")
-+                            .setMessage("No files yet in /root/goose_output/.\n\n" +
-+                                    "Ask Ghost to save files there, e.g.:\n" +
-+                                    "\"save the report to /root/goose_output/report.md\"")
++                            .setTitle("Output files [DEBUG]")
++                            .setMessage(dbg.toString())
 +                            .setPositiveButton("OK", null)
 +                            .show();
 +                    return;
@@ -1095,10 +1101,10 @@ index 0000000..8533fc4
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
 new file mode 100644
-index 0000000..537bf4a
+index 0000000..fde8af7
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,115 @@
 +package com.zalexdev.stryker.goose;
 +
 +import com.zalexdev.stryker.utils.Core;
@@ -1124,27 +1130,47 @@ index 0000000..537bf4a
 +    private static List<String> runChroot(String cmd) {
 +        List<String> out = new ArrayList<>();
 +        try {
-+            // Ikutin pattern app: "su -mm" + newline ekstra
 +            Process p = Runtime.getRuntime().exec("su -mm");
 +            OutputStream os = p.getOutputStream();
++            // Kirim command, terus exit eksplisit (jangan andelin EOF doang)
 +            os.write((Core.EXECUTE + " '" + cmd + "'\n").getBytes(StandardCharsets.UTF_8));
-+            os.write("\n".getBytes(StandardCharsets.UTF_8));
++            os.write("exit\n".getBytes(StandardCharsets.UTF_8));
 +            os.flush();
 +            os.close();
-+            BufferedReader r = new BufferedReader(
-+                    new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
-+            String line;
-+            while ((line = r.readLine()) != null) {
-+                out.add(line);
-+            }
-+            r.close();
-+            // Drain stderr juga
-+            BufferedReader er = new BufferedReader(
-+                    new InputStreamReader(p.getErrorStream(), StandardCharsets.UTF_8));
-+            while (er.readLine() != null) {}
-+            er.close();
++            // Baca stdout & stderr barengan biar nggak deadlock
++            StringBuilder stdout = new StringBuilder();
++            StringBuilder stderr = new StringBuilder();
++            Thread tOut = new Thread(() -> {
++                try {
++                    BufferedReader r = new BufferedReader(new InputStreamReader(
++                            p.getInputStream(), StandardCharsets.UTF_8));
++                    String line;
++                    while ((line = r.readLine()) != null) {
++                        synchronized (stdout) { stdout.append(line).append("\n"); }
++                    }
++                } catch (Exception ignored) {}
++            });
++            Thread tErr = new Thread(() -> {
++                try {
++                    BufferedReader r = new BufferedReader(new InputStreamReader(
++                            p.getErrorStream(), StandardCharsets.UTF_8));
++                    String line;
++                    while ((line = r.readLine()) != null) {
++                        synchronized (stderr) { stderr.append(line).append("\n"); }
++                    }
++                } catch (Exception ignored) {}
++            });
++            tOut.setDaemon(true);
++            tErr.setDaemon(true);
++            tOut.start();
++            tErr.start();
 +            p.waitFor();
++            tOut.join(2000);
++            tErr.join(2000);
 +            p.destroy();
++            for (String line : stdout.toString().split("\n")) {
++                if (!line.trim().isEmpty()) out.add(line);
++            }
 +        } catch (Exception ignored) {}
 +        return out;
 +    }
@@ -1152,6 +1178,11 @@ index 0000000..537bf4a
 +    /** Ensure output and export directories exist. */
 +    public static void ensureDirs() {
 +        runChroot("mkdir -p " + OUTPUT_DIR + " " + EXPORT_DIR);
++    }
++
++    /** Debug: return raw ls output for troubleshooting. */
++    public static List<String> debugLsRaw() {
++        return runChroot("ls -1 " + OUTPUT_DIR);
 +    }
 +
 +    /** List files in the goose output directory. */
