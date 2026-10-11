@@ -216,10 +216,10 @@ index 0000000..11ea223
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..ade45e3
+index 0000000..ab475fc
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,601 @@
+@@ -0,0 +1,648 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -274,6 +274,8 @@ index 0000000..ade45e3
 +    // Pending image to send (base64 + mime)
 +    private String pendingImageBase64;
 +    private String pendingImageMime;
++    // Pending text file content
++    private String pendingTextFile;
 +
 +    private int streamingPos = -1;
 +    private final Map<String, Integer> toolPositions = new HashMap<>();
@@ -397,9 +399,10 @@ index 0000000..ade45e3
 +    }
 +
 +    private void pickImage() {
-+        Intent i = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-+        i.setType("image/*");
-+        startActivityForResult(i, REQ_PICK_IMAGE);
++        Intent i = new Intent(Intent.ACTION_GET_CONTENT);
++        i.setType("*/*");
++        i.addCategory(Intent.CATEGORY_OPENABLE);
++        startActivityForResult(Intent.createChooser(i, "Select file"), REQ_PICK_IMAGE);
 +    }
 +
 +    @Override
@@ -408,33 +411,71 @@ index 0000000..ade45e3
 +        if (requestCode == REQ_PICK_IMAGE && resultCode == RESULT_OK && data != null) {
 +            Uri uri = data.getData();
 +            if (uri == null) return;
++            String mime = getContentResolver().getType(uri);
++            boolean isImage = mime != null && mime.startsWith("image/");
 +            new Thread(() -> {
 +                try {
-+                    InputStream is = getContentResolver().openInputStream(uri);
-+                    Bitmap bmp = BitmapFactory.decodeStream(is);
-+                    if (is != null) is.close();
-+                    if (bmp == null) {
-+                        ui(() -> Toast.makeText(this, "Could not read image",
-+                                Toast.LENGTH_SHORT).show());
-+                        return;
++                    if (isImage) {
++                        // Gambar: kirim sebagai image block
++                        InputStream is = getContentResolver().openInputStream(uri);
++                        Bitmap bmp = BitmapFactory.decodeStream(is);
++                        if (is != null) is.close();
++                        if (bmp == null) {
++                            ui(() -> Toast.makeText(this, "Could not read image",
++                                    Toast.LENGTH_SHORT).show());
++                            return;
++                        }
++                        int w = bmp.getWidth(), h = bmp.getHeight();
++                        float scale = Math.min(1.0f, 1024.0f / Math.max(w, h));
++                        if (scale < 1.0f) {
++                            bmp = Bitmap.createScaledBitmap(bmp,
++                                    (int)(w*scale), (int)(h*scale), true);
++                        }
++                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
++                        bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos);
++                        byte[] bytes = baos.toByteArray();
++                        pendingImageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
++                        pendingImageMime = "image/jpeg";
++                        pendingTextFile = null;
++                        ui(() -> {
++                            Toast.makeText(this, "Image attached — tap Send",
++                                    Toast.LENGTH_SHORT).show();
++                            inputView.setHint("Ask about the image…");
++                        });
++                    } else {
++                        // File teks: baca isi, taruh di pending
++                        InputStream is = getContentResolver().openInputStream(uri);
++                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
++                        byte[] buf = new byte[8192];
++                        int n, total = 0;
++                        while ((n = is.read(buf)) != -1 && total < 100*1024) {
++                            baos.write(buf, 0, n);
++                            total += n;
++                        }
++                        if (is != null) is.close();
++                        String content = baos.toString("UTF-8");
++                        // Ambil nama file
++                        String name = "file";
++                        try {
++                            android.database.Cursor c = getContentResolver()
++                                    .query(uri, null, null, null, null);
++                            if (c != null && c.moveToFirst()) {
++                                int idx = c.getColumnIndex(
++                                        android.provider.OpenableColumns.DISPLAY_NAME);
++                                if (idx >= 0) name = c.getString(idx);
++                                c.close();
++                            }
++                        } catch (Exception ignored) {}
++                        pendingTextFile = "File: " + name + "\n```\n" + content + "\n```\n";
++                        pendingImageBase64 = null;
++                        pendingImageMime = null;
++                        final String fName = name;
++                        ui(() -> {
++                            Toast.makeText(this, "File attached: " + fName + " — tap Send",
++                                    Toast.LENGTH_SHORT).show();
++                            inputView.setHint("Ask about " + fName + "…");
++                        });
 +                    }
-+                    // Resize biar nggak kegedean (max 1024px)
-+                    int w = bmp.getWidth(), h = bmp.getHeight();
-+                    float scale = Math.min(1.0f, 1024.0f / Math.max(w, h));
-+                    if (scale < 1.0f) {
-+                        bmp = Bitmap.createScaledBitmap(bmp,
-+                                (int)(w*scale), (int)(h*scale), true);
-+                    }
-+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-+                    bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos);
-+                    byte[] bytes = baos.toByteArray();
-+                    pendingImageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
-+                    pendingImageMime = "image/jpeg";
-+                    ui(() -> {
-+                        Toast.makeText(this, "Image attached — tap Send",
-+                                Toast.LENGTH_SHORT).show();
-+                        inputView.setHint("Ask about the image…");
-+                    });
 +                } catch (Exception e) {
 +                    ui(() -> Toast.makeText(this, "Attach failed: " + e.getMessage(),
 +                            Toast.LENGTH_SHORT).show());
@@ -448,11 +489,17 @@ index 0000000..ade45e3
 +        String text = inputView.getText() != null ? inputView.getText().toString().trim() : "";
 +        String img64 = pendingImageBase64;
 +        String imgMime = pendingImageMime;
-+        if (text.isEmpty() && img64 == null) return;
++        String textFile = pendingTextFile;
++        if (text.isEmpty() && img64 == null && textFile == null) return;
++        // Gabung file teks ke prompt
++        if (textFile != null) {
++            text = textFile + (text.isEmpty() ? "" : "\n" + text);
++        }
 +        inputView.setText("");
 +        inputView.setHint("Ask goose…");
 +        pendingImageBase64 = null;
 +        pendingImageMime = null;
++        pendingTextFile = null;
 +        working = true;
 +        updateSendButton();
 +        final String fText = text;
@@ -955,7 +1002,7 @@ index 0000000..0fdd2b3
 +</shape>
 diff --git a/app/src/main/res/layout/activity_goose_chat.xml b/app/src/main/res/layout/activity_goose_chat.xml
 new file mode 100644
-index 0000000..87eceaf
+index 0000000..6de0445
 --- /dev/null
 +++ b/app/src/main/res/layout/activity_goose_chat.xml
 @@ -0,0 +1,81 @@
@@ -1011,8 +1058,8 @@ index 0000000..87eceaf
 +            android:layout_height="48dp"
 +            android:layout_marginEnd="4dp"
 +            android:background="?attr/selectableItemBackgroundBorderless"
-+            android:contentDescription="Attach image"
-+            android:src="@drawable/chat" />
++            android:contentDescription="Attach file"
++            android:src="@drawable/attachment" />
 +
 +        <com.google.android.material.textfield.TextInputLayout
 +            android:layout_width="0dp"
@@ -1091,7 +1138,7 @@ index 0000000..5d6a1e8
 +</LinearLayout>
 diff --git a/app/src/main/res/menu/goose_chat_menu.xml b/app/src/main/res/menu/goose_chat_menu.xml
 new file mode 100644
-index 0000000..8595272
+index 0000000..1124fd3
 --- /dev/null
 +++ b/app/src/main/res/menu/goose_chat_menu.xml
 @@ -0,0 +1,14 @@
@@ -1101,7 +1148,7 @@ index 0000000..8595272
 +    <item
 +        android:id="@+id/goose_menu_files"
 +        android:title="Files"
-+        android:icon="@drawable/chat"
++        android:icon="@drawable/file"
 +        app:showAsAction="ifRoom" />
 +    <item
 +        android:id="@+id/goose_menu_sessions"
