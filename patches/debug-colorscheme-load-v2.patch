@@ -1,0 +1,30 @@
+diff --git a/terminal/src/main/java/com/stryker/terminal/component/data.kt b/terminal/src/main/java/com/stryker/terminal/component/data.kt
+index c699b71..605d041 100644
+--- a/terminal/src/main/java/com/stryker/terminal/component/data.kt
++++ b/terminal/src/main/java/com/stryker/terminal/component/data.kt
+@@ -86,9 +86,25 @@ abstract class ConfigFileBasedComponent<out T : ConfigFileBasedObject>(protected
+       val configVisitor = configure.getVisitor()
+       val componentObject = onCreateComponentObject(configVisitor)
+       componentObject.onConfigLoaded(configVisitor)
++      // MONDBG: log successful load to /sdcard/Stryker/
++      try {
++        val logDir = java.io.File("/sdcard/Stryker")
++        logDir.mkdirs()
++        java.io.File(logDir, "colorscheme-debug.log").appendText(
++          "OK: ${file.name}\n")
++      } catch (_: Exception) {}
+       componentObject
+     } catch (e: RuntimeException) {
+       NLog.e(TAG, "Failed to load config: ${file.absolutePath}: ${e.localizedMessage}")
++      // MONDBG: file logging for release builds (NLog disabled)
++      try {
++        val logDir = java.io.File("/sdcard/Stryker")
++        logDir.mkdirs()
++        val sw = java.io.StringWriter()
++        e.printStackTrace(java.io.PrintWriter(sw))
++        java.io.File(logDir, "colorscheme-debug.log").appendText(
++          "FAIL: ${file.name}: ${e.localizedMessage}\n${sw.toString()}\n---\n")
++      } catch (_: Exception) {}
+       null
+     }
+   }
