@@ -216,10 +216,10 @@ index 0000000..11ea223
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..ab475fc
+index 0000000..560d50a
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,648 @@
+@@ -0,0 +1,657 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -371,20 +371,25 @@ index 0000000..ab475fc
 +    // ------------------------------------------------------------------
 +
 +    private void onSendOrCancel() {
-+        if (working) {
-+            cancelTurn();
-+        } else {
-+            sendPrompt();
++        try {
++            if (working) {
++                cancelTurn();
++            } else {
++                sendPrompt();
++            }
++        } catch (Exception e) {
++            Toast.makeText(this, "Send error: " + e.getClass().getSimpleName() +
++                    ": " + e.getMessage(), Toast.LENGTH_LONG).show();
 +        }
 +    }
 +
 +    private void updateSendButton() {
 +        if (working) {
 +            sendButton.setText("Cancel");
-+            updateSendButton();
++            sendButton.setEnabled(true);
 +        } else {
 +            sendButton.setText("Send");
-+            updateSendButton();
++            sendButton.setEnabled(true);
 +        }
 +    }
 +
@@ -485,6 +490,7 @@ index 0000000..ab475fc
 +    }
 +
 +    private void sendPrompt() {
++        try {
 +        if (working || client == null || sessionId == null) return;
 +        String text = inputView.getText() != null ? inputView.getText().toString().trim() : "";
 +        String img64 = pendingImageBase64;
@@ -523,6 +529,9 @@ index 0000000..ab475fc
 +                });
 +            }
 +        }, "goose-prompt").start();
++        } catch (Exception e) {
++            Toast.makeText(this, "sendPrompt: " + e.getMessage(), Toast.LENGTH_LONG).show();
++        }
 +    }
 +
 +    // ------------------------------------------------------------------
