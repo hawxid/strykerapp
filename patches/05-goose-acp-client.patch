@@ -1,9 +1,9 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
 new file mode 100644
-index 0000000..76ee090
+index 0000000..cb1dde8
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseAcpClient.java
-@@ -0,0 +1,465 @@
+@@ -0,0 +1,467 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.util.Log;
@@ -11,6 +11,7 @@ index 0000000..76ee090
 +import com.zalexdev.stryker.utils.Core;
 +
 +import org.json.JSONArray;
++import org.json.JSONException;
 +import org.json.JSONObject;
 +
 +import java.io.BufferedReader;
@@ -185,7 +186,7 @@ index 0000000..76ee090
 +    }
 +
 +    /** Send a user prompt. Results stream back via Listener (async). */
-+    public void prompt(String sessionId, String text) throws IOException {
++    public void prompt(String sessionId, String text) throws IOException, JSONException {
 +        int id = nextId.getAndIncrement();
 +        promptSessions.put(id, sessionId);
 +        JSONObject params = new JSONObject();
@@ -208,7 +209,7 @@ index 0000000..76ee090
 +     * Answer a permission request. optionId must be one of the optionIds
 +     * delivered in onPermissionRequest (e.g. "allow_once").
 +     */
-+    public void respondPermission(String requestId, String optionId) throws IOException {
++    public void respondPermission(String requestId, String optionId) throws IOException, JSONException {
 +        JSONObject outcome = new JSONObject();
 +        outcome.put("outcome", "selected");
 +        outcome.put("optionId", optionId);
@@ -222,7 +223,7 @@ index 0000000..76ee090
 +    }
 +
 +    /** Cooperative cancel of the in-flight turn (notification, no response). */
-+    public void cancel(String sessionId) throws IOException {
++    public void cancel(String sessionId) throws IOException, JSONException {
 +        JSONObject params = new JSONObject();
 +        params.put("sessionId", sessionId);
 +        JSONObject msg = new JSONObject();
@@ -251,7 +252,7 @@ index 0000000..76ee090
 +    // Internal
 +    // ------------------------------------------------------------------
 +
-+    private Pending sendRequest(int id, String method, JSONObject params) throws IOException {
++    private Pending sendRequest(int id, String method, JSONObject params) throws IOException, JSONException {
 +        Pending p = new Pending();
 +        pending.put(id, p);
 +        JSONObject msg = new JSONObject();
@@ -265,7 +266,8 @@ index 0000000..76ee090
 +
 +    private synchronized void send(JSONObject msg) throws IOException {
 +        if (out == null) throw new IOException("not connected");
-+        out.write((msg.toString() + "\n").getBytes(StandardCharsets.UTF_8));
++        String line = msg.toString();
++        out.write((line + "\n").getBytes(StandardCharsets.UTF_8));
 +        out.flush();
 +    }
 +
