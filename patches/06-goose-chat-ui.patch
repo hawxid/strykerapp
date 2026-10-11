@@ -1,0 +1,691 @@
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 76de270..b9f5a14 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -123,6 +123,12 @@
+             android:name=".utils.LicenseActivity"
+             android:exported="false" />
+ 
++        <activity
++            android:name=".goose.GooseChatActivity"
++            android:exported="false"
++            android:configChanges="orientation|screenSize|keyboardHidden"
++            android:windowSoftInputMode="adjustResize" />
++
+         <activity
+             android:name=".about.ThanksActivity"
+             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+diff --git a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
+index 1b99e0e..09cc682 100644
+--- a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
++++ b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
+@@ -119,6 +119,7 @@ public class Dashboard extends Fragment {
+         view.findViewById(R.id.dash_hero).setOnClickListener(
+                 v -> receiver.changeFragment(R.id.wifi_item));
+         view.findViewById(R.id.terminal).setOnClickListener(v -> openTerminal());
++        view.findViewById(R.id.goose_ai).setOnClickListener(v -> openGooseAi());
+         view.findViewById(R.id.dash_customize).setOnClickListener(v -> showCustomize());
+         view.findViewById(R.id.dash_report).setOnClickListener(v -> reportBug());
+         view.findViewById(R.id.dash_github).setOnClickListener(
+@@ -1143,6 +1144,12 @@ public class Dashboard extends Fragment {
+         context.startActivity(terminal);
+     }
+ 
++    private void openGooseAi() {
++        Intent goose = new Intent(context, com.zalexdev.stryker.goose.GooseChatActivity.class);
++        goose.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++        context.startActivity(goose);
++    }
++
+     private void showFirstScanTip(View target) {
+         if (core.getInt("dashboard_open") == 12 && !core.getBoolean("firstscan")) {
+             TapTargetView.showFor(activity,
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
+new file mode 100644
+index 0000000..92e5749
+--- /dev/null
++++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
+@@ -0,0 +1,105 @@
++package com.zalexdev.stryker.goose;
++
++import android.view.Gravity;
++import android.view.LayoutInflater;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.LinearLayout;
++
++import androidx.annotation.NonNull;
++import androidx.recyclerview.widget.RecyclerView;
++
++import com.google.android.material.textview.MaterialTextView;
++import com.zalexdev.stryker.R;
++
++import java.util.ArrayList;
++import java.util.List;
++
++/** RecyclerView adapter for goose chat messages. */
++public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
++
++    private final List<ChatMessage> messages = new ArrayList<>();
++
++    static class VH extends RecyclerView.ViewHolder {
++        final LinearLayout bubble;
++        final MaterialTextView titleView;
++        final MaterialTextView bodyView;
++
++        VH(@NonNull View itemView) {
++            super(itemView);
++            bubble = itemView.findViewById(R.id.chat_bubble);
++            titleView = itemView.findViewById(R.id.chat_title);
++            bodyView = itemView.findViewById(R.id.chat_body);
++        }
++    }
++
++    @NonNull
++    @Override
++    public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
++        View v = LayoutInflater.from(parent.getContext())
++                .inflate(R.layout.item_chat_message, parent, false);
++        return new VH(v);
++    }
++
++    @Override
++    public void onBindViewHolder(@NonNull VH h, int position) {
++        ChatMessage m = messages.get(position);
++        h.bodyView.setText(m.text != null ? m.text : "");
++
++        boolean showTitle = m.title != null && !m.title.isEmpty();
++        h.titleView.setVisibility(showTitle ? View.VISIBLE : View.GONE);
++        if (showTitle) h.titleView.setText(m.title);
++
++        LinearLayout.LayoutParams lp =
++                (LinearLayout.LayoutParams) h.bubble.getLayoutParams();
++        switch (m.type) {
++            case USER:
++                lp.gravity = Gravity.END;
++                h.bodyView.setBackgroundResource(R.drawable.chat_bubble_user);
++                break;
++            case TOOL:
++                lp.gravity = Gravity.START;
++                h.bodyView.setBackgroundResource(R.drawable.chat_bubble_tool);
++                break;
++            case SYSTEM:
++                lp.gravity = Gravity.CENTER_HORIZONTAL;
++                h.bodyView.setBackgroundResource(R.drawable.chat_bubble_system);
++                break;
++            case AGENT:
++            default:
++                lp.gravity = Gravity.START;
++                h.bodyView.setBackgroundResource(R.drawable.chat_bubble_agent);
++                break;
++        }
++        h.bubble.setLayoutParams(lp);
++    }
++
++    @Override
++    public int getItemCount() {
++        return messages.size();
++    }
++
++    public void add(ChatMessage m) {
++        messages.add(m);
++        notifyItemInserted(messages.size() - 1);
++    }
++
++    /** Append text to message at position (for streaming). */
++    public void appendText(int position, String chunk) {
++        if (position < 0 || position >= messages.size()) return;
++        ChatMessage m = messages.get(position);
++        m.text = (m.text == null ? "" : m.text) + chunk;
++        notifyItemChanged(position);
++    }
++
++    /** Update text of message at position. */
++    public void setText(int position, String text) {
++        if (position < 0 || position >= messages.size()) return;
++        messages.get(position).text = text;
++        notifyItemChanged(position);
++    }
++
++    public int lastPosition() {
++        return messages.size() - 1;
++    }
++}
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatMessage.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatMessage.java
+new file mode 100644
+index 0000000..fcb0427
+--- /dev/null
++++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatMessage.java
+@@ -0,0 +1,21 @@
++package com.zalexdev.stryker.goose;
++
++/** Single chat message (user, agent, tool, or system). */
++public class ChatMessage {
++
++    public enum Type { USER, AGENT, TOOL, SYSTEM }
++
++    public final Type type;
++    public String text;
++    public String title; // tool name / status for TOOL messages
++
++    public ChatMessage(Type type, String text) {
++        this(type, text, null);
++    }
++
++    public ChatMessage(Type type, String text, String title) {
++        this.type = type;
++        this.text = text;
++        this.title = title;
++    }
++}
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+new file mode 100644
+index 0000000..451d53a
+--- /dev/null
++++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+@@ -0,0 +1,290 @@
++package com.zalexdev.stryker.goose;
++
++import android.app.AlertDialog;
++import android.os.Bundle;
++import android.widget.Toast;
++
++import androidx.appcompat.app.AppCompatActivity;
++import androidx.recyclerview.widget.LinearLayoutManager;
++import androidx.recyclerview.widget.RecyclerView;
++
++import com.google.android.material.appbar.MaterialToolbar;
++import com.google.android.material.button.MaterialButton;
++import com.google.android.material.textfield.TextInputEditText;
++import com.google.android.material.textview.MaterialTextView;
++import com.zalexdev.stryker.R;
++
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++
++/**
++ * Goose AI chat (Fase 2). Minimal functional UI over GooseAcpClient:
++ * message list, input, streaming, and a basic permission dialog.
++ * Approval cards (Fase 3) will replace the dialog with inline cards.
++ */
++public class GooseChatActivity extends AppCompatActivity implements GooseAcpClient.Listener {
++
++    private static final String WORK_DIR = "/root";
++
++    private GooseAcpClient client;
++    private String sessionId;
++    private volatile boolean working = false;
++
++    private ChatAdapter adapter;
++    private RecyclerView messagesView;
++    private MaterialTextView statusView;
++    private TextInputEditText inputView;
++    private MaterialButton sendButton;
++
++    private int streamingPos = -1;
++    private final Map<String, Integer> toolPositions = new HashMap<>();
++
++    @Override
++    protected void onCreate(Bundle savedInstanceState) {
++        super.onCreate(savedInstanceState);
++        setContentView(R.layout.activity_goose_chat);
++
++        MaterialToolbar toolbar = findViewById(R.id.goose_toolbar);
++        toolbar.setNavigationOnClickListener(v -> finish());
++
++        statusView = findViewById(R.id.goose_status);
++        messagesView = findViewById(R.id.goose_messages);
++        inputView = findViewById(R.id.goose_input);
++        sendButton = findViewById(R.id.goose_send);
++
++        adapter = new ChatAdapter();
++        LinearLayoutManager lm = new LinearLayoutManager(this);
++        lm.setStackFromEnd(true);
++        messagesView.setLayoutManager(lm);
++        messagesView.setAdapter(adapter);
++
++        sendButton.setOnClickListener(v -> sendPrompt());
++
++        addSystem("Starting goose…");
++        new Thread(this::connectBlocking, "goose-connect").start();
++    }
++
++    @Override
++    protected void onDestroy() {
++        if (client != null) client.disconnect();
++        super.onDestroy();
++    }
++
++    // ------------------------------------------------------------------
++    // Connection
++    // ------------------------------------------------------------------
++
++    private void connectBlocking() {
++        try {
++            client = new GooseAcpClient();
++            client.connect(this);
++        } catch (Exception e) {
++            ui(() -> {
++                setStatus("Failed to start goose: " + e.getMessage());
++                addSystem("Could not launch 'goose acp' in the chroot. " +
++                        "Make sure goose is installed: " +
++                        "curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash");
++            });
++            return;
++        }
++        ui(() -> setStatus("Handshaking…"));
++        if (!client.initialize(20000)) {
++            ui(() -> {
++                setStatus("ACP handshake failed");
++                addSystem("No initialize response from goose acp.");
++            });
++            return;
++        }
++        GooseAcpClient.SessionInfo info = client.newSession(WORK_DIR, 20000);
++        if (info == null) {
++            ui(() -> {
++                setStatus("Session creation failed");
++                addSystem("goose did not create a session.");
++            });
++            return;
++        }
++        sessionId = info.sessionId;
++        String mode = info.modeId;
++        ui(() -> {
++            setStatus("Connected · mode: " + mode + " · " + sessionId);
++            addSystem("Session ready (" + sessionId + "). Ask anything.");
++        });
++    }
++
++    // ------------------------------------------------------------------
++    // Sending
++    // ------------------------------------------------------------------
++
++    private void sendPrompt() {
++        if (working || client == null || sessionId == null) return;
++        String text = inputView.getText() != null ? inputView.getText().toString().trim() : "";
++        if (text.isEmpty()) return;
++        inputView.setText("");
++        working = true;
++        sendButton.setEnabled(false);
++        ui(() -> {
++            adapter.add(new ChatMessage(ChatMessage.Type.USER, text));
++            scrollToBottom();
++            streamingPos = adapter.lastPosition() + 1;
++            adapter.add(new ChatMessage(ChatMessage.Type.AGENT, ""));
++            scrollToBottom();
++        });
++        new Thread(() -> {
++            try {
++                client.prompt(sessionId, text);
++            } catch (Exception e) {
++                ui(() -> {
++                    addSystem("Send failed: " + e.getMessage());
++                    working = false;
++                    sendButton.setEnabled(true);
++                });
++            }
++        }, "goose-prompt").start();
++    }
++
++    // ------------------------------------------------------------------
++    // GooseAcpClient.Listener (called on reader thread)
++    // ------------------------------------------------------------------
++
++    @Override
++    public void onMessageChunk(String messageId, String text) {
++        if (text == null || text.isEmpty()) return;
++        ui(() -> {
++            if (streamingPos >= 0) {
++                adapter.appendText(streamingPos, text);
++                scrollToBottom();
++            }
++        });
++    }
++
++    @Override
++    public void onToolCall(String toolCallId, String title, String rawInputJson) {
++        ui(() -> {
++            int pos = adapter.lastPosition() + 1;
++            adapter.add(new ChatMessage(ChatMessage.Type.TOOL,
++                    rawInputJson, "⚙ " + title + " — waiting approval"));
++            toolPositions.put(toolCallId, pos);
++            scrollToBottom();
++        });
++    }
++
++    @Override
++    public void onToolCallUpdate(String toolCallId, String status, String text) {
++        ui(() -> {
++            Integer pos = toolPositions.get(toolCallId);
++            if (pos == null) return;
++            String label = "⚙ " + status;
++            if (text != null && !text.isEmpty()) {
++                String short_ = text.length() > 400 ? text.substring(0, 400) + "…" : text;
++                adapter.setText(pos, short_);
++            }
++            // update title via re-bind: store in message
++            // (simplest: keep text, title stays)
++            scrollToBottom();
++        });
++    }
++
++    @Override
++    public void onPermissionRequest(String requestId, String toolCallId, String title,
++                                    String command, List<GooseAcpClient.PermissionOption> options) {
++        ui(() -> showPermissionDialog(requestId, title, command, options));
++    }
++
++    @Override
++    public void onTurnEnd(String sessionId, String stopReason) {
++        ui(() -> {
++            working = false;
++            sendButton.setEnabled(true);
++            streamingPos = -1;
++            toolPositions.clear();
++            setStatus("Connected · " + this.sessionId + " · idle");
++        });
++    }
++
++    @Override
++    public void onUsage(long used, long size, double costUsd) {
++        // lightweight: only update on turn end to avoid spam; ignore here
++    }
++
++    @Override
++    public void onSessionTitle(String sessionId, String title) {
++        // could show as system message; skip for now
++    }
++
++    @Override
++    public void onError(String message) {
++        ui(() -> addSystem("Error: " + message));
++    }
++
++    @Override
++    public void onDisconnected() {
++        ui(() -> {
++            setStatus("Disconnected");
++            addSystem("goose acp process ended.");
++            working = false;
++            sendButton.setEnabled(false);
++        });
++    }
++
++    // ------------------------------------------------------------------
++    // Permission dialog (Fase 2 minimal — Fase 3 ganti jadi inline cards)
++    // ------------------------------------------------------------------
++
++    private void showPermissionDialog(String requestId, String title, String command,
++                                      List<GooseAcpClient.PermissionOption> options) {
++        String[] names = new String[options.size()];
++        for (int i = 0; i < options.size(); i++) {
++            names[i] = prettyOption(options.get(i).optionId);
++        }
++        new AlertDialog.Builder(this)
++                .setTitle(title)
++                .setMessage(command.isEmpty() ? "Allow this tool call?" : command)
++                .setItems(names, (d, which) -> {
++                    String optionId = options.get(which).optionId;
++                    new Thread(() -> {
++                        try {
++                            client.respondPermission(requestId, optionId);
++                        } catch (Exception e) {
++                            ui(() -> Toast.makeText(this,
++                                    "Permission reply failed: " + e.getMessage(),
++                                    Toast.LENGTH_SHORT).show());
++                        }
++                    }, "goose-permit").start();
++                })
++                .setCancelable(false)
++                .show();
++    }
++
++    private String prettyOption(String optionId) {
++        switch (optionId) {
++            case "allow_always": return "Allow always";
++            case "allow_once": return "Allow once";
++            case "reject_once": return "Deny once";
++            case "reject_always": return "Deny always";
++            default: return optionId;
++        }
++    }
++
++    // ------------------------------------------------------------------
++    // UI helpers
++    // ------------------------------------------------------------------
++
++    private void ui(Runnable r) {
++        runOnUiThread(r);
++    }
++
++    private void setStatus(String s) {
++        statusView.setText(s);
++    }
++
++    private void addSystem(String s) {
++        adapter.add(new ChatMessage(ChatMessage.Type.SYSTEM, s));
++        scrollToBottom();
++    }
++
++    private void scrollToBottom() {
++        int last = adapter.lastPosition();
++        if (last >= 0) messagesView.smoothScrollToPosition(last);
++    }
++}
+diff --git a/app/src/main/res/drawable/chat_bubble_agent.xml b/app/src/main/res/drawable/chat_bubble_agent.xml
+new file mode 100644
+index 0000000..62f1364
+--- /dev/null
++++ b/app/src/main/res/drawable/chat_bubble_agent.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
++    <corners android:radius="16dp" />
++    <solid android:color="#1E1E1E" />
++    <stroke android:width="1dp" android:color="#3A3A3A" />
++</shape>
+diff --git a/app/src/main/res/drawable/chat_bubble_system.xml b/app/src/main/res/drawable/chat_bubble_system.xml
+new file mode 100644
+index 0000000..fd2cacb
+--- /dev/null
++++ b/app/src/main/res/drawable/chat_bubble_system.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
++    <corners android:radius="12dp" />
++    <solid android:color="#00000000" />
++    <stroke android:width="1dp" android:color="#4A4A4A" />
++</shape>
+diff --git a/app/src/main/res/drawable/chat_bubble_tool.xml b/app/src/main/res/drawable/chat_bubble_tool.xml
+new file mode 100644
+index 0000000..5c5c0a3
+--- /dev/null
++++ b/app/src/main/res/drawable/chat_bubble_tool.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
++    <corners android:radius="12dp" />
++    <solid android:color="#1A2E1A" />
++    <stroke android:width="1dp" android:color="#2E5A2E" />
++</shape>
+diff --git a/app/src/main/res/drawable/chat_bubble_user.xml b/app/src/main/res/drawable/chat_bubble_user.xml
+new file mode 100644
+index 0000000..0fdd2b3
+--- /dev/null
++++ b/app/src/main/res/drawable/chat_bubble_user.xml
+@@ -0,0 +1,5 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
++    <corners android:radius="16dp" />
++    <solid android:color="#2B3A67" />
++</shape>
+diff --git a/app/src/main/res/layout/activity_goose_chat.xml b/app/src/main/res/layout/activity_goose_chat.xml
+new file mode 100644
+index 0000000..ca072bc
+--- /dev/null
++++ b/app/src/main/res/layout/activity_goose_chat.xml
+@@ -0,0 +1,72 @@
++<?xml version="1.0" encoding="utf-8"?>
++<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent"
++    android:background="@color/light_contrast"
++    android:orientation="vertical">
++
++    <com.google.android.material.appbar.MaterialToolbar
++        android:id="@+id/goose_toolbar"
++        android:layout_width="match_parent"
++        android:layout_height="?attr/actionBarSize"
++        android:background="@color/light_contrast"
++        app:navigationIcon="@drawable/ic_arrow_back"
++        app:navigationIconTint="?android:attr/textColorPrimary"
++        app:title="Goose AI"
++        app:titleTextColor="?android:attr/textColorPrimary" />
++
++    <com.google.android.material.textview.MaterialTextView
++        android:id="@+id/goose_status"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:paddingStart="16dp"
++        android:paddingEnd="16dp"
++        android:paddingTop="2dp"
++        android:paddingBottom="6dp"
++        android:text="Connecting…"
++        android:textColor="@color/grey"
++        android:textSize="12sp" />
++
++    <androidx.recyclerview.widget.RecyclerView
++        android:id="@+id/goose_messages"
++        android:layout_width="match_parent"
++        android:layout_height="0dp"
++        android:layout_weight="1"
++        android:clipToPadding="false"
++        android:paddingBottom="12dp"
++        android:scrollbars="none" />
++
++    <LinearLayout
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:gravity="center_vertical"
++        android:orientation="horizontal"
++        android:padding="12dp">
++
++        <com.google.android.material.textfield.TextInputLayout
++            android:layout_width="0dp"
++            android:layout_height="wrap_content"
++            android:layout_weight="1"
++            android:hint="Ask goose…"
++            app:boxBackgroundMode="outline">
++
++            <com.google.android.material.textfield.TextInputEditText
++                android:id="@+id/goose_input"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:inputType="textMultiLine"
++                android:maxLines="4" />
++
++        </com.google.android.material.textfield.TextInputLayout>
++
++        <com.google.android.material.button.MaterialButton
++            android:id="@+id/goose_send"
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:layout_marginStart="8dp"
++            android:text="Send" />
++
++    </LinearLayout>
++
++</LinearLayout>
+diff --git a/app/src/main/res/layout/fragment_dashboard.xml b/app/src/main/res/layout/fragment_dashboard.xml
+index 2bdd5e2..40639d9 100644
+--- a/app/src/main/res/layout/fragment_dashboard.xml
++++ b/app/src/main/res/layout/fragment_dashboard.xml
+@@ -684,6 +684,24 @@
+                     android:src="@drawable/arrow_right" />
+             </LinearLayout>
+ 
++            <LinearLayout
++                android:id="@+id/goose_ai"
++                style="@style/DashboardRow">
++
++                <ImageView
++                    style="@style/DashboardRowIcon"
++                    android:src="@drawable/chat"
++                    app:tint="#00897B" />
++
++                <com.google.android.material.textview.MaterialTextView
++                    style="@style/DashboardRowTitle"
++                    android:text="@string/dashboard_card_goose_title" />
++
++                <ImageView
++                    style="@style/DashboardRowChevron"
++                    android:src="@drawable/arrow_right" />
++            </LinearLayout>
++
+             <LinearLayout
+                 android:id="@+id/dash_customize"
+                 style="@style/DashboardRow">
+diff --git a/app/src/main/res/layout/item_chat_message.xml b/app/src/main/res/layout/item_chat_message.xml
+new file mode 100644
+index 0000000..5d6a1e8
+--- /dev/null
++++ b/app/src/main/res/layout/item_chat_message.xml
+@@ -0,0 +1,43 @@
++<?xml version="1.0" encoding="utf-8"?>
++<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    android:layout_width="match_parent"
++    android:layout_height="wrap_content"
++    android:orientation="vertical"
++    android:paddingStart="12dp"
++    android:paddingEnd="12dp"
++    android:paddingTop="4dp"
++    android:paddingBottom="4dp">
++
++    <LinearLayout
++        android:id="@+id/chat_bubble"
++        android:layout_width="wrap_content"
++        android:layout_height="wrap_content"
++        android:layout_gravity="start"
++        android:layout_weight="0"
++        android:maxWidth="300dp"
++        android:orientation="vertical">
++
++        <com.google.android.material.textview.MaterialTextView
++            android:id="@+id/chat_title"
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:paddingStart="12dp"
++            android:paddingEnd="12dp"
++            android:paddingTop="8dp"
++            android:textColor="#8BC34A"
++            android:textSize="12sp"
++            android:textStyle="bold"
++            android:visibility="gone" />
++
++        <com.google.android.material.textview.MaterialTextView
++            android:id="@+id/chat_body"
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:padding="12dp"
++            android:textColor="#FFFFFF"
++            android:textIsSelectable="true"
++            android:textSize="14sp" />
++
++    </LinearLayout>
++
++</LinearLayout>
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 7da0553..1c03b98 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -249,6 +249,7 @@ manager</string>
+     <string name="dashboard_customize_all">All</string>
+     <string name="dashboard_customize_none">None</string>
+     <string name="dashboard_card_terminal_title">Open Terminal</string>
++    <string name="dashboard_card_goose_title">Goose AI</string>
+     <string name="dashboard_card_news_title">News</string>
+     <string name="dashboard_card_news_subtitle">Project updates and changelogs</string>
+     <string name="dashboard_card_saved_title">Saved networks</string>
