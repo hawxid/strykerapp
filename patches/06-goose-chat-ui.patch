@@ -188,10 +188,10 @@ index 0000000..fcb0427
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..02bec0e
+index 0000000..e919a1a
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,455 @@
+@@ -0,0 +1,452 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -495,9 +495,6 @@ index 0000000..02bec0e
 +                        Toast.LENGTH_SHORT).show());
 +            }
 +        }, "goose-permit").start();
-+    }
-+                .setCancelable(false)
-+                .show();
 +    }
 +
 +    private String prettyOption(String optionId) {
