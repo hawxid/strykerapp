@@ -6,7 +6,7 @@ index ac47aae..0e4fca8 100644
       */
      public void connect(Listener listener) throws IOException {
          this.listener = listener;
-+        Log.d(TAG, "spawning su for goose acp");
++        Log.w(TAG, "spawning su for goose acp");
          Process p = Runtime.getRuntime().exec("su");
          OutputStream os = p.getOutputStream();
          // Enter chroot, then replace the shell with goose acp so our pipes
@@ -14,7 +14,7 @@ index ac47aae..0e4fca8 100644
          this.process = p;
          this.out = os;
          this.connected = true;
-+        Log.d(TAG, "launching goose acp via login shell");
++        Log.w(TAG, "launching goose acp via login shell");
  
          BufferedReader reader = new BufferedReader(
                  new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
@@ -22,7 +22,7 @@ index ac47aae..0e4fca8 100644
              try {
                  String el;
                  while ((el = errReader.readLine()) != null) {
-+                    Log.d(TAG, "STDERR: " + el.substring(0, Math.min(300, el.length())));
++                    Log.w(TAG, "STDERR: " + el.substring(0, Math.min(300, el.length())));
                  }
              } catch (IOException ignored) { }
          }, "goose-acp-stderr");
@@ -30,7 +30,7 @@ index ac47aae..0e4fca8 100644
  
      /** Resume an existing session. Returns null on failure. */
      public SessionInfo loadSession(String sessionId, String cwd, long timeoutMs) {
-+        Log.d(TAG, "session/load " + sessionId);
++        Log.w(TAG, "session/load " + sessionId);
          try {
              int id = nextId.getAndIncrement();
              JSONObject params = new JSONObject();
@@ -38,7 +38,7 @@ index ac47aae..0e4fca8 100644
  
      /** List all sessions. Returns empty list on failure. */
      public List<SessionEntry> listSessions(long timeoutMs) {
-+        Log.d(TAG, "session/list");
++        Log.w(TAG, "session/list");
          List<SessionEntry> out = new ArrayList<>();
          try {
              int id = nextId.getAndIncrement();
@@ -46,7 +46,7 @@ index ac47aae..0e4fca8 100644
  
      /** Delete a session. Returns true on success. */
      public boolean deleteSession(String sessionId, long timeoutMs) {
-+        Log.d(TAG, "session/delete " + sessionId);
++        Log.w(TAG, "session/delete " + sessionId);
          try {
              int id = nextId.getAndIncrement();
              JSONObject params = new JSONObject();
@@ -54,7 +54,7 @@ index ac47aae..0e4fca8 100644
      private synchronized void send(JSONObject msg) throws IOException {
          if (out == null) throw new IOException("not connected");
          String line = msg.toString();
-+        Log.d(TAG, "C->A " + msg.optString("method", "?") +
++        Log.w(TAG, "C->A " + msg.optString("method", "?") +
 +                " id=" + msg.opt("id") + " :: " + trunc(line, 300));
          out.write((line + "\n").getBytes(StandardCharsets.UTF_8));
          out.flush();
@@ -71,7 +71,7 @@ index ac47aae..0e4fca8 100644
                      Log.w(TAG, "skipping non-JSON line: " + line.substring(0, Math.min(120, line.length())));
                      continue;
                  }
-+                Log.d(TAG, "A->C " + msg.optString("method", "response") +
++                Log.w(TAG, "A->C " + msg.optString("method", "response") +
 +                        " id=" + msg.opt("id") + " :: " + trunc(line, 300));
                  try {
                      handleMessage(msg);
@@ -80,10 +80,10 @@ index ac47aae..0e4fca8 100644
              String stopReason = result != null ? result.optString("stopReason", "") : "";
              JSONObject err = msg.optJSONObject("error");
              if (err != null) {
-+                Log.d(TAG, "prompt id=" + id + " failed: " + err.optString("message", err.toString()));
++                Log.w(TAG, "prompt id=" + id + " failed: " + err.optString("message", err.toString()));
                  emitError("prompt failed: " + err.optString("message", err.toString()));
              }
-+            Log.d(TAG, "prompt id=" + id + " turn ended: " + stopReason);
++            Log.w(TAG, "prompt id=" + id + " turn ended: " + stopReason);
              Listener l = listener;
              if (l != null) l.onTurnEnd(sessionId, stopReason);
              return;
@@ -91,7 +91,7 @@ index ac47aae..0e4fca8 100644
              }
              Listener l = listener;
              if (l != null) l.onPermissionRequest(requestId, toolCallId, title, command, options);
-+            Log.d(TAG, "permission request: " + title + " :: " + trunc(command, 200) +
++            Log.w(TAG, "permission request: " + title + " :: " + trunc(command, 200) +
 +                    " reqId=" + requestId + " options=" + options.size());
          } catch (Exception e) {
              Log.e(TAG, "bad permission request", e);
@@ -120,13 +120,13 @@ index 77332b4..9068f3b 100644
      // ------------------------------------------------------------------
  
      private void connectBlocking() {
-+        Log.d(TAG, "connectBlocking started");
++        Log.w(TAG, "connectBlocking started");
          try {
              client = new GooseAcpClient();
              client.connect(this);
-+            Log.d(TAG, "client.connect ok");
++            Log.w(TAG, "client.connect ok");
          } catch (Exception e) {
-+            Log.d(TAG, "client.connect failed: " + e);
++            Log.w(TAG, "client.connect failed: " + e);
              ui(() -> {
                  setStatus("Failed to start goose: " + e.getMessage());
                  addSystem("Could not launch 'goose acp' in the chroot. " +
@@ -134,9 +134,9 @@ index 77332b4..9068f3b 100644
              return;
          }
          ui(() -> setStatus("Handshaking…"));
-+        Log.d(TAG, "sending initialize");
++        Log.w(TAG, "sending initialize");
          if (!client.initialize(20000)) {
-+            Log.d(TAG, "initialize FAILED");
++            Log.w(TAG, "initialize FAILED");
              ui(() -> {
                  setStatus("ACP handshake failed");
                  addSystem("No initialize response from goose acp.");
@@ -144,7 +144,7 @@ index 77332b4..9068f3b 100644
              return;
          }
          GooseAcpClient.SessionInfo info = client.newSession(WORK_DIR, 20000);
-+        Log.d(TAG, "newSession result: " + (info == null ? "null" : info.sessionId + " mode=" + info.modeId));
++        Log.w(TAG, "newSession result: " + (info == null ? "null" : info.sessionId + " mode=" + info.modeId));
          if (info == null) {
              ui(() -> {
                  setStatus("Session creation failed");
@@ -152,7 +152,7 @@ index 77332b4..9068f3b 100644
      @Override
      public void onPermissionRequest(String requestId, String toolCallId, String title,
                                      String command, List<GooseAcpClient.PermissionOption> options) {
-+        Log.d(TAG, "showing permission dialog: " + title);
++        Log.w(TAG, "showing permission dialog: " + title);
          ui(() -> showPermissionDialog(requestId, title, command, options));
      }
  
@@ -160,7 +160,7 @@ index 77332b4..9068f3b 100644
                  .setMessage(command.isEmpty() ? "Allow this tool call?" : command)
                  .setItems(names, (d, which) -> {
                      String optionId = opts.get(which).optionId;
-+                    Log.d(TAG, "permission chosen: " + optionId + " reqId=" + requestId);
++                    Log.w(TAG, "permission chosen: " + optionId + " reqId=" + requestId);
                      new Thread(() -> {
                          try {
                              client.respondPermission(requestId, optionId);
@@ -168,7 +168,7 @@ index 77332b4..9068f3b 100644
              Toast.makeText(this, "Not connected", Toast.LENGTH_SHORT).show();
              return;
          }
-+        Log.d(TAG, "loading sessions");
++        Log.w(TAG, "loading sessions");
          setStatus("Loading sessions…");
          new Thread(() -> {
              List<GooseAcpClient.SessionEntry> sessions = client.listSessions(15000);
@@ -176,7 +176,7 @@ index 77332b4..9068f3b 100644
      private void resumeSession(GooseAcpClient.SessionEntry s) {
          if (client == null || working) return;
          if (s.sessionId.equals(sessionId)) return;
-+        Log.d(TAG, "resuming " + s.sessionId);
++        Log.w(TAG, "resuming " + s.sessionId);
          setStatus("Resuming session…");
          new Thread(() -> {
              GooseAcpClient.SessionInfo info =
