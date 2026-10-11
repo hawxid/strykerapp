@@ -1,0 +1,119 @@
+diff --git a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
+index db84977..ab9c9bd 100644
+--- a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
++++ b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
+@@ -28,6 +28,14 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
+     val COLOR_META_PATH = arrayOf(CONTEXT_META_NAME)
+     val COLOR_PATH = arrayOf(CONTEXT_META_NAME, CONTEXT_COLOR_NAME)
+ 
++    // MONDBG v7: cache bitmap bg image biar decode sekali aja (decode tiap ganti tab = lag)
++    private var cachedBgBitmap: android.graphics.Bitmap? = null
++    private var cachedBgKey: String = ""
++    private var origDecorBg: android.graphics.drawable.Drawable? = null
++    private var origDecorBgSaved: Boolean = false
++    private var origUiMainBg: android.graphics.drawable.Drawable? = null
++    private var origUiMainBgSaved: Boolean = false
++
+     const val COLOR_TYPE_BEGIN = -3
+     const val COLOR_TYPE_END = 15
+ 
+@@ -133,6 +141,87 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
+   internal fun applyColorScheme(view: TerminalView?, extraKeysView: ExtraKeysView?) {
+     validateColors()
+ 
++    // MONDBG v7: background image PoC - reads /sdcard/Stryker/term_bg.png if present.
++    // v6: gambar di decorView tapi KETUTUP layer opaque: root ui_main (LinearLayout)
++    // punya android:background="@color/terminal_background". v7: bikin root ui_main
++    // (+ TabSwitcher kalau opaque) transparan juga saat gambar ada, restore saat tidak.
++    // Layout/insets/softInput tidak disentuh -> extra keys tetap naik ke atas keyboard.
++    // Bitmap di-decode sekali lalu di-cache. Debug patch, hapus setelah PoC.
++    var bgImageOk = false
++    if (view != null) {
++      try {
++        val bgLog = java.io.File("/sdcard/Stryker/term-bg-debug.log")
++        bgLog.parentFile?.mkdirs()
++        fun bgDbg(msg: String) {
++          try {
++            bgLog.appendText("$msg\n")
++          } catch (_: Exception) {
++          }
++        }
++        fun findActivity(ctx: android.content.Context?): android.app.Activity? {
++          var c = ctx
++          while (c is android.content.ContextWrapper) {
++            if (c is android.app.Activity) return c
++            c = c.baseContext
++          }
++          return c as? android.app.Activity
++        }
++        val bgFile = java.io.File("/sdcard/Stryker/term_bg.png")
++        val key = if (bgFile.exists() && bgFile.canRead()) {
++          "${bgFile.absolutePath}:${bgFile.length()}:${bgFile.lastModified()}"
++        } else ""
++        var bitmap = if (key.isNotEmpty() && key == cachedBgKey) cachedBgBitmap else null
++        if (bitmap == null && key.isNotEmpty()) {
++          bgDbg("decodeFile (cache miss)")
++          bitmap = android.graphics.BitmapFactory.decodeFile(bgFile.absolutePath)
++          bgDbg("decode bitmap=${if (bitmap != null) "${bitmap.width}x${bitmap.height}" else "null"}")
++          if (bitmap != null) {
++            cachedBgBitmap = bitmap
++            cachedBgKey = key
++          }
++        } else if (bitmap != null) {
++          bgDbg("cache hit ${bitmap.width}x${bitmap.height}")
++        }
++        val activity = findActivity(view.context)
++        val decor = activity?.window?.decorView
++        val content = decor?.findViewById<android.view.ViewGroup>(android.R.id.content)
++        val uiMainRoot = content?.getChildAt(0) as? android.view.View
++        val tabSwitcher = activity?.findViewById<android.view.View>(com.stryker.terminal.R.id.tab_switcher)
++        if (!origDecorBgSaved) {
++          origDecorBg = decor?.background
++          origDecorBgSaved = true
++          bgDbg("saved orig decor bg")
++        }
++        if (!origUiMainBgSaved) {
++          origUiMainBg = uiMainRoot?.background
++          origUiMainBgSaved = true
++          bgDbg("saved orig uiMain bg=$origUiMainBg tabSwitcherBg=${tabSwitcher?.background}")
++        }
++        if (bitmap != null && decor != null) {
++          val drawable = android.graphics.drawable.BitmapDrawable(view.resources, bitmap)
++          decor.background = drawable
++          uiMainRoot?.background = null
++          if (tabSwitcher?.background != null) {
++            tabSwitcher.background = null
++            bgDbg("tabSwitcher bg nulled")
++          }
++          view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
++          bgImageOk = true
++          bgDbg("drawable set on decorView ${decor.width}x${decor.height}, bgImageOk=true")
++        } else {
++          if (origDecorBgSaved && decor != null) {
++            decor.background = origDecorBg
++          }
++          if (origUiMainBgSaved) {
++            uiMainRoot?.background = origUiMainBg
++          }
++          bgDbg("restored orig bgs (no image)")
++        }
++        bgDbg("bgImageOk=$bgImageOk")
++      } catch (_: Exception) {
++      }
++    }
++
+     if (view != null) {
+       val scheme = TerminalColorScheme()
+       scheme.updateWith(foregroundColor, backgroundColor, cursorColor, color)
+@@ -141,7 +230,10 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
+         session.emulator.setColorScheme(scheme)
+       }
+       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-        view.setBackgroundColor(TerminalColors.parse(backgroundColor))
++        // MONDBG v7: skip solid color kalau gambar kepasang (view sudah transparan)
++        if (!bgImageOk) {
++          view.setBackgroundColor(TerminalColors.parse(backgroundColor))
++        }
+       }
+     }
+ 
