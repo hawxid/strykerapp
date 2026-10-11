@@ -188,10 +188,10 @@ index 0000000..fcb0427
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..77332b4
+index 0000000..02bec0e
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,422 @@
+@@ -0,0 +1,455 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -444,25 +444,58 @@ index 0000000..77332b4
 +            options.add(new GooseAcpClient.PermissionOption("reject_once", "reject_once", "reject_once"));
 +        }
 +        final List<GooseAcpClient.PermissionOption> opts = options;
-+        String[] names = new String[opts.size()];
-+        for (int i = 0; i < opts.size(); i++) {
-+            names[i] = prettyOption(opts.get(i).optionId);
-+        }
-+        new AlertDialog.Builder(this)
++
++        // Pakai tombol eksplisit (bukan setItems) — lebih reliable di semua device.
++        // Mapping: cari allow_once, reject_once, allow_always; sisanya diabaikan.
++        String allowOnce = findOption(opts, "allow_once");
++        String rejectOnce = findOption(opts, "reject_once");
++        String allowAlways = findOption(opts, "allow_always");
++        if (allowOnce == null && !opts.isEmpty()) allowOnce = opts.get(0).optionId;
++        if (rejectOnce == null && opts.size() > 1) rejectOnce = opts.get(1).optionId;
++
++        final String fAllow = allowOnce;
++        final String fReject = rejectOnce;
++        final String fAlways = allowAlways;
++
++        AlertDialog.Builder b = new AlertDialog.Builder(this)
 +                .setTitle(title)
 +                .setMessage(command.isEmpty() ? "Allow this tool call?" : command)
-+                .setItems(names, (d, which) -> {
-+                    String optionId = opts.get(which).optionId;
-+                    new Thread(() -> {
-+                        try {
-+                            client.respondPermission(requestId, optionId);
-+                        } catch (Exception e) {
-+                            ui(() -> Toast.makeText(this,
-+                                    "Permission reply failed: " + e.getMessage(),
-+                                    Toast.LENGTH_SHORT).show());
-+                        }
-+                    }, "goose-permit").start();
-+                })
++                .setCancelable(false);
++        if (fAllow != null) {
++            b.setPositiveButton(prettyOption(fAllow), (d, w) -> replyPermission(requestId, fAllow));
++        }
++        if (fReject != null) {
++            b.setNegativeButton(prettyOption(fReject), (d, w) -> replyPermission(requestId, fReject));
++        }
++        if (fAlways != null) {
++            b.setNeutralButton(prettyOption(fAlways), (d, w) -> replyPermission(requestId, fAlways));
++        }
++        // Safety: kalo nggak ada satupun tombol, kasih default
++        if (fAllow == null && fReject == null && fAlways == null) {
++            b.setPositiveButton("Allow once", (d, w) -> replyPermission(requestId, "allow_once"));
++            b.setNegativeButton("Deny", (d, w) -> replyPermission(requestId, "reject_once"));
++        }
++        b.show();
++    }
++
++    private String findOption(List<GooseAcpClient.PermissionOption> opts, String id) {
++        for (GooseAcpClient.PermissionOption o : opts) {
++            if (id.equals(o.optionId)) return o.optionId;
++        }
++        return null;
++    }
++
++    private void replyPermission(String requestId, String optionId) {
++        new Thread(() -> {
++            try {
++                client.respondPermission(requestId, optionId);
++            } catch (Exception e) {
++                ui(() -> Toast.makeText(this,
++                        "Permission reply failed: " + e.getMessage(),
++                        Toast.LENGTH_SHORT).show());
++            }
++        }, "goose-permit").start();
++    }
 +                .setCancelable(false)
 +                .show();
 +    }
