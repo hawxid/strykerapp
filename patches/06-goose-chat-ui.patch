@@ -355,10 +355,10 @@ index 0000000..ba18847
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..1b3f852
+index 0000000..4ca92a5
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,757 @@
+@@ -0,0 +1,779 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -1001,54 +1001,76 @@ index 0000000..1b3f852
 +    // Output files (download from chroot)
 +    // ------------------------------------------------------------------
 +
++    // Current browser path for the file explorer
++    private String browserPath = GooseFiles.GOOSE_DIR;
++
 +    private void showFilesDialog() {
-+        setStatus("Listing files…");
-+        new Thread(() -> {
-+            List<String> files = GooseFiles.listOutputFiles();
-+            // Tambah HTML dari /sdcard/Stryker/ langsung (tanpa chroot)
-+            List<String> sdHtml = GooseFiles.listSdcardHtml();
-+            for (String h : sdHtml) {
-+                if (!files.contains(h)) files.add("[sdcard] " + h);
-+            }
-+            List<String> raw = GooseFiles.debugLsRaw();
-+            ui(() -> {
-+                setStatus("Connected · " + sessionId + " · idle");
-+                if (files.isEmpty()) {
-+                    StringBuilder dbg = new StringBuilder();
-+                    dbg.append("No files yet in /root/goose_output/.\n\n");
-+                    dbg.append("DEBUG raw ls output (").append(raw.size()).append(" lines):\n");
-+                    for (int i = 0; i < Math.min(raw.size(), 5); i++) {
-+                        dbg.append("[").append(raw.get(i)).append("]\n");
-+                    }
-+                    if (raw.isEmpty()) dbg.append("(empty - no output at all)\n");
-+                    new AlertDialog.Builder(this)
-+                            .setTitle("Output files [DEBUG]")
-+                            .setMessage(dbg.toString())
-+                            .setPositiveButton("OK", null)
-+                            .show();
-+                    return;
-+                }
-+                String[] names = files.toArray(new String[0]);
-+                new AlertDialog.Builder(this)
-+                        .setTitle("Output files")
-+                        .setMessage("Tap .html to view, others to export to /sdcard/Stryker/goose_files/")
-+                        .setItems(names, (d, which) -> {
-+                            String fn = files.get(which);
-+                            // Strip [sdcard] prefix
-+                            boolean isSdcard = fn.startsWith("[sdcard] ");
-+                            if (isSdcard) fn = fn.substring(9);
-+                            if (fn.toLowerCase().endsWith(".html") ||
-+                                fn.toLowerCase().endsWith(".htm")) {
-+                                openViz(fn);
-+                            } else {
-+                                exportFile(fn);
-+                            }
-+                        })
-+                        .setNegativeButton("Close", null)
-+                        .show();
-+            });
-+        }, "goose-ls").start();
++        GooseFiles.ensureGooseDir();
++        browserPath = GooseFiles.GOOSE_DIR;
++        showBrowserDialog();
 +    }
++
++    /** Simple file browser dialog with back navigation. */
++    private void showBrowserDialog() {
++        List<File> items = GooseFiles.listDir(browserPath);
++        List<String> names = new ArrayList<>();
++        List<File> files = new ArrayList<>();
++
++        // ".." buat mundur (kecuali udah di root sdcard)
++        File cur = new File(browserPath);
++        File parent = cur.getParentFile();
++        boolean canUp = parent != null && browserPath.startsWith("/sdcard/Stryker");
++        if (canUp) {
++            names.add("📁 ..");
++            files.add(parent);
++        }
++        for (File f : items) {
++            if (f.isDirectory()) {
++                names.add("📁 " + f.getName());
++            } else {
++                String n = f.getName().toLowerCase();
++                if (n.endsWith(".html") || n.endsWith(".htm")) {
++                    names.add("📊 " + f.getName());
++                } else {
++                    names.add("📄 " + f.getName());
++                }
++            }
++            files.add(f);
++        }
++
++        if (names.isEmpty()) {
++            names.add("(empty)");
++            files.add(null);
++        }
++
++        String title = "Files: " + browserPath.replace("/sdcard/", "~/");
++        new AlertDialog.Builder(this)
++                .setTitle(title)
++                .setItems(names.toArray(new String[0]), (d, which) -> {
++                    File sel = files.get(which);
++                    if (sel == null) return;
++                    if (sel.isDirectory()) {
++                        browserPath = sel.getAbsolutePath();
++                        showBrowserDialog();
++                    } else {
++                        String n = sel.getName().toLowerCase();
++                        if (n.endsWith(".html") || n.endsWith(".htm")) {
++                            android.content.Intent i = new android.content.Intent(
++                                    this, GhostVizActivity.class);
++                            i.putExtra(GhostVizActivity.EXTRA_PATH,
++                                    sel.getAbsolutePath());
++                            i.putExtra(GhostVizActivity.EXTRA_TITLE, sel.getName());
++                            startActivity(i);
++                        } else {
++                            Toast.makeText(this, "File: " + sel.getAbsolutePath() +
++                                    "\nOpen via file manager", Toast.LENGTH_LONG).show();
++                        }
++                    }
++                })
++                .setNegativeButton("Close", null)
++                .show();
++    }
++
 +
 +    /** Open an HTML file in the WebView visualization activity. */
 +    private void openViz(String filename) {
@@ -1118,10 +1140,10 @@ index 0000000..1b3f852
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
 new file mode 100644
-index 0000000..ccf9da6
+index 0000000..306f05c
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,176 @@
 +package com.zalexdev.stryker.goose;
 +
 +import com.zalexdev.stryker.utils.Core;
@@ -1197,8 +1219,40 @@ index 0000000..ccf9da6
 +        runChroot("mkdir -p " + OUTPUT_DIR + " " + EXPORT_DIR);
 +    }
 +
-+    /** List HTML files directly from /sdcard/Stryker/ (no chroot needed). */
-+    public static List<String> listSdcardHtml() {
++    /** Base directory for Ghost-generated files. */
++    public static final String GOOSE_DIR = "/sdcard/Stryker/goose";
++
++    /** Ensure the goose output dir exists. */
++    public static void ensureGooseDir() {
++        try {
++            new File(GOOSE_DIR).mkdirs();
++        } catch (Exception ignored) {}
++    }
++
++    /** List files AND directories in the given path (for browser). */
++    public static List<File> listDir(String path) {
++        List<File> result = new ArrayList<>();
++        try {
++            File dir = new File(path);
++            File[] list = dir.listFiles();
++            if (list != null) {
++                // Directories first, then files, alphabetical
++                java.util.Arrays.sort(list, (a, b) -> {
++                    if (a.isDirectory() != b.isDirectory())
++                        return a.isDirectory() ? -1 : 1;
++                    boolean aHtml = a.getName().toLowerCase().endsWith(".html");
++                    boolean bHtml = b.getName().toLowerCase().endsWith(".html");
++                    if (!a.isDirectory() && aHtml != bHtml) return aHtml ? -1 : 1;
++                    return a.getName().compareToIgnoreCase(b.getName());
++                });
++                for (File f : list) result.add(f);
++            }
++        } catch (Exception ignored) {}
++        return result;
++    }
++
++    /** List all files directly from /sdcard/Stryker/ (no chroot needed). */
++    public static List<String> listSdcardFiles() {
 +        List<String> files = new ArrayList<>();
 +        try {
 +            File dir = new File("/sdcard/Stryker");
@@ -1206,15 +1260,24 @@ index 0000000..ccf9da6
 +            if (list != null) {
 +                for (File f : list) {
 +                    if (f.isFile()) {
-+                        String n = f.getName().toLowerCase();
-+                        if (n.endsWith(".html") || n.endsWith(".htm")) {
-+                            files.add(f.getName());
-+                        }
++                        files.add(f.getName());
 +                    }
 +                }
++                // Sort: html first, then alphabetical
++                files.sort((a, b) -> {
++                    boolean aHtml = a.toLowerCase().endsWith(".html");
++                    boolean bHtml = b.toLowerCase().endsWith(".html");
++                    if (aHtml != bHtml) return aHtml ? -1 : 1;
++                    return a.compareToIgnoreCase(b);
++                });
 +            }
 +        } catch (Exception ignored) {}
 +        return files;
++    }
++
++    /** List HTML files directly from /sdcard/Stryker/ (no chroot needed). */
++    public static List<String> listSdcardHtml() {
++        return listSdcardFiles();
 +    }
 +
 +    /** Debug: return raw ls output for troubleshooting. */
