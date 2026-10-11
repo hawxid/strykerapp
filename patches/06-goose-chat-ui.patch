@@ -44,10 +44,10 @@ index 1b99e0e..5022f70 100644
              TapTargetView.showFor(activity,
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 new file mode 100644
-index 0000000..37718af
+index 0000000..8206a30
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,143 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.view.Gravity;
@@ -89,8 +89,9 @@ index 0000000..37718af
 +        View v = LayoutInflater.from(parent.getContext())
 +                .inflate(R.layout.item_chat_message, parent, false);
 +        VH h = new VH(v);
-+        // Click listener sekali di sini (bukan di onBind) biar nggak ke-reset pas streaming
-+        h.itemView.setOnClickListener(view -> {
++        // Click di title DAN bubble (bukan body, karena body textIsSelectable makan touch).
++        // Title nggak selectable, jadi tap-nya reliable.
++        View.OnClickListener expandListener = view -> {
 +            int pos = h.getAdapterPosition();
 +            if (pos == RecyclerView.NO_POSITION) return;
 +            ChatMessage m = messages.get(pos);
@@ -98,7 +99,10 @@ index 0000000..37718af
 +                m.expanded = !m.expanded;
 +                notifyItemChanged(pos);
 +            }
-+        });
++        };
++        h.titleView.setOnClickListener(expandListener);
++        h.bubble.setOnClickListener(expandListener);
++        h.bubble.setClickable(true);
 +        return h;
 +    }
 +
@@ -219,10 +223,10 @@ index 0000000..11ea223
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..ae48fa8
+index 0000000..6867119
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,698 @@
+@@ -0,0 +1,704 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -558,8 +562,9 @@ index 0000000..ae48fa8
 +        ui(() -> {
 +            adapter.add(new ChatMessage(ChatMessage.Type.USER, display));
 +            scrollToBottom();
-+            streamingPos = adapter.lastPosition() + 1;
-+            adapter.add(new ChatMessage(ChatMessage.Type.AGENT, ""));
++            // Jangan bikin bubble agent dulu — bikin pas teks pertama masuk
++            // biar urutannya bener: tool dulu, baru teks agent
++            streamingPos = -1;
 +            scrollToBottom();
 +        });
 +        new Thread(() -> {
@@ -586,6 +591,11 @@ index 0000000..ae48fa8
 +    public void onMessageChunk(String messageId, String text) {
 +        if (text == null || text.isEmpty()) return;
 +        ui(() -> {
++            // Lazy-create bubble agent pas teks pertama masuk
++            if (streamingPos < 0) {
++                streamingPos = adapter.lastPosition() + 1;
++                adapter.add(new ChatMessage(ChatMessage.Type.AGENT, ""));
++            }
 +            if (streamingPos >= 0) {
 +                adapter.appendText(streamingPos, text);
 +                scrollToBottom();
@@ -923,10 +933,10 @@ index 0000000..ae48fa8
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
 new file mode 100644
-index 0000000..7d73c4a
+index 0000000..537bf4a
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,90 @@
 +package com.zalexdev.stryker.goose;
 +
 +import com.zalexdev.stryker.utils.Core;
@@ -952,28 +962,27 @@ index 0000000..7d73c4a
 +    private static List<String> runChroot(String cmd) {
 +        List<String> out = new ArrayList<>();
 +        try {
-+            Process p = Runtime.getRuntime().exec("su");
++            // Ikutin pattern app: "su -mm" + newline ekstra
++            Process p = Runtime.getRuntime().exec("su -mm");
 +            OutputStream os = p.getOutputStream();
-+            os.write((Core.EXECUTE + "'" + cmd + "'\n").getBytes(StandardCharsets.UTF_8));
++            os.write((Core.EXECUTE + " '" + cmd + "'\n").getBytes(StandardCharsets.UTF_8));
++            os.write("\n".getBytes(StandardCharsets.UTF_8));
 +            os.flush();
 +            os.close();
-+            // Drain stderr biar nggak block
-+            Thread et = new Thread(() -> {
-+                try {
-+                    BufferedReader er = new BufferedReader(new InputStreamReader(
-+                            p.getErrorStream(), StandardCharsets.UTF_8));
-+                    while (er.readLine() != null) {}
-+                } catch (Exception ignored) {}
-+            });
-+            et.setDaemon(true);
-+            et.start();
 +            BufferedReader r = new BufferedReader(
 +                    new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
 +            String line;
 +            while ((line = r.readLine()) != null) {
 +                out.add(line);
 +            }
++            r.close();
++            // Drain stderr juga
++            BufferedReader er = new BufferedReader(
++                    new InputStreamReader(p.getErrorStream(), StandardCharsets.UTF_8));
++            while (er.readLine() != null) {}
++            er.close();
 +            p.waitFor();
++            p.destroy();
 +        } catch (Exception ignored) {}
 +        return out;
 +    }
