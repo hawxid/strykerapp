@@ -355,10 +355,10 @@ index 0000000..ba18847
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..d70ea57
+index 0000000..4c96978
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,896 @@
+@@ -0,0 +1,897 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -542,7 +542,8 @@ index 0000000..d70ea57
 +    /** Load previous chat history when resuming a session. */
 +    private void loadHistory(String sid) {
 +        new Thread(() -> {
-+            List<String[]> history = GooseFiles.getSessionHistory(sid, 30);
++            com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(this);
++            List<String[]> history = GooseFiles.getSessionHistory(core, sid, 30);
 +            ui(() -> {
 +                if (history.isEmpty()) {
 +                    addSystem("No previous messages found.");
@@ -1257,10 +1258,10 @@ index 0000000..d70ea57
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
 new file mode 100644
-index 0000000..7b44cd7
+index 0000000..cf4e28d
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,209 @@
 +package com.zalexdev.stryker.goose;
 +
 +import com.zalexdev.stryker.utils.Core;
@@ -1283,36 +1284,25 @@ index 0000000..7b44cd7
 +    public static final String OUTPUT_DIR = "/root/goose_output";
 +    public static final String EXPORT_DIR = "/sdcard/Stryker/goose_files";
 +
-+    /** Run a command in the chroot via su, return stdout lines.
-+     *  Pattern mengikuti BasicExploitLaunch yang terbukti jalan:
-+     *  kirim command + newline kosong (bukan "exit"), close stdin,
-+     *  baca stdout sampe EOF baru stderr. */
-+    private static List<String> runChroot(String cmd) {
-+        List<String> out = new ArrayList<>();
++    /** Run a command in the chroot via Core.customChrootCommand (proven pattern).
++     *  Needs a Core instance (new Core(context)). Uses nolog variant. */
++    private static List<String> runChroot(Core core, String cmd) {
 +        try {
-+            Process p = Runtime.getRuntime().exec("su -mm");
-+            OutputStream os = p.getOutputStream();
-+            os.write((Core.EXECUTE + " '" + cmd + "'\n").getBytes(StandardCharsets.UTF_8));
-+            os.write("\n".getBytes(StandardCharsets.UTF_8));
-+            os.flush();
-+            os.close();
-+            // Baca stdout sampe EOF (blocking)
-+            BufferedReader br = new BufferedReader(new InputStreamReader(
-+                    p.getInputStream(), StandardCharsets.UTF_8));
-+            String line;
-+            while ((line = br.readLine()) != null) {
-+                if (!line.trim().isEmpty()) out.add(line);
++            ArrayList<String> out = core.customChrootCommand(cmd, true);
++            List<String> result = new ArrayList<>();
++            for (String line : out) {
++                if (line != null && !line.trim().isEmpty()) {
++                    result.add(line);
++                }
 +            }
-+            br.close();
-+            // Baru baca stderr (diabaikan, cuma biar nggak block)
-+            BufferedReader brErr = new BufferedReader(new InputStreamReader(
-+                    p.getErrorStream(), StandardCharsets.UTF_8));
-+            while (brErr.readLine() != null) {}
-+            brErr.close();
-+            p.waitFor();
-+            p.destroy();
++            return result;
 +        } catch (Exception ignored) {}
-+        return out;
++        return new ArrayList<>();
++    }
++
++    /** Legacy runChroot without Core — deprecated, returns empty. */
++    private static List<String> runChroot(String cmd) {
++        return new ArrayList<>();
 +    }
 +
 +    /** Ensure output and export directories exist. */
@@ -1391,7 +1381,7 @@ index 0000000..7b44cd7
 +     * Path: /root/.local/share/goose/sessions/sessions.db
 +     * Returns list of [role, text] pairs, last N messages (chronological).
 +     */
-+    public static List<String[]> getSessionHistory(String sessionId, int maxMessages) {
++    public static List<String[]> getSessionHistory(Core core, String sessionId, int maxMessages) {
 +        List<String[]> out = new ArrayList<>();
 +        try {
 +            if (sessionId == null || !sessionId.matches("[a-zA-Z0-9_-]+")) return out;
@@ -1399,7 +1389,7 @@ index 0000000..7b44cd7
 +            // Pakai -json biar output terstruktur, pakai separator aman
 +            String sql = "SELECT role, content_json FROM messages WHERE session_id='" +
 +                    sessionId + "' ORDER BY created_timestamp DESC LIMIT " + maxMessages;
-+            List<String> lines = runChroot(
++            List<String> lines = runChroot(core,
 +                    "sqlite3 -json '" + db + "' \"" + sql + "\"");
 +            if (lines.isEmpty()) return out;
 +            // Gabung semua line jadi satu JSON
