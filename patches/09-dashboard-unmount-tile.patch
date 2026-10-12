@@ -1,0 +1,37 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
+index 5022f70..f4fdcdb 100644
+--- a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
++++ b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
+@@ -946,9 +946,32 @@ public class Dashboard extends Fragment {
+         t.add(new Tool("logs", R.string.dashboard_tile_logs, R.drawable.bug_report,
+                 R.drawable.dashboard_tile_bg_orange, 0xFFEF6C00, false,
+                 () -> receiver.changeFragment(R.id.logs_item)));
++        t.add(new Tool("unmount", R.string.settings_unmount_title, R.drawable.stop,
++                R.drawable.dashboard_tile_bg_red, 0xFFC62828, false,
++                () -> confirmUnmountDashboard()));
+         return t;
+     }
+ 
++    /** Unmount chroot dari dashboard - SAMA PERSIS kayak Settings (killroot + close app). */
++    private void confirmUnmountDashboard() {
++        new MaterialAlertDialogBuilder(context)
++                .setTitle(R.string.settings_unmount_confirm_title)
++                .setMessage(R.string.settings_unmount_confirm_message)
++                .setPositiveButton(R.string.settings_unmount_title, (d, w) -> {
++                    new Thread(() -> {
++                        boolean ok = core.unmountCore();
++                        if (ok) {
++                            core.toaster(getString(R.string.settings_unmount_success));
++                            activity.runOnUiThread(() -> activity.finishAffinity());
++                        } else {
++                            core.toaster(getString(R.string.settings_unmount_failed));
++                        }
++                    }, "dashboard-unmount").start();
++                })
++                .setNegativeButton(android.R.string.cancel, null)
++                .show();
++    }
++
+     private boolean toolShown(Tool t) {
+         String key = PREF_TOOL + t.key;
+         return core.contains(key) ? core.getBoolean(key) : t.on;
