@@ -1,5 +1,5 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
-index 8dba962..8fa894d 100644
+index 8dba962..b17d155 100644
 --- a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
 +++ b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
 @@ -116,11 +116,10 @@ public class Dashboard extends Fragment {
@@ -24,7 +24,7 @@ index 8dba962..8fa894d 100644
      }
  
  
-@@ -1205,4 +1204,41 @@ public class Dashboard extends Fragment {
+@@ -1205,4 +1204,54 @@ public class Dashboard extends Fragment {
                  .setNegativeButton(android.R.string.cancel, null)
                  .show();
      }
@@ -50,7 +50,9 @@ index 8dba962..8fa894d 100644
 +        }
 +    }
 +
-+    /** Load custom HTML banner dari /sdcard/Stryker/dashboard_banner.html (tanpa rebuild). */
++    /** Load custom HTML banner dari /sdcard/Stryker/dashboard_banner.html (tanpa rebuild).
++     *  Pake loadDataWithBaseURL (baca via Java) biar nggak kena ERR_ACCESS_DENIED
++     *  yang ngeblokir file:// di WebView Android 7+. */
 +    private void loadDashboardBanner(android.view.View view) {
 +        android.webkit.WebView banner = view.findViewById(R.id.dash_banner);
 +        if (banner == null) return;
@@ -59,11 +61,22 @@ index 8dba962..8fa894d 100644
 +            banner.setVisibility(android.view.View.GONE);
 +            return;
 +        }
-+        banner.getSettings().setJavaScriptEnabled(true);
-+        banner.setBackgroundColor(0x00000000);
-+        banner.addJavascriptInterface(new BannerBridge(), "Stryker");
-+        banner.loadUrl("file://" + htmlFile.getAbsolutePath());
-+        banner.setVisibility(android.view.View.VISIBLE);
++        try {
++            StringBuilder sb = new StringBuilder();
++            java.io.BufferedReader r = new java.io.BufferedReader(
++                    new java.io.FileReader(htmlFile));
++            String line;
++            while ((line = r.readLine()) != null) sb.append(line).append("\n");
++            r.close();
++            banner.getSettings().setJavaScriptEnabled(true);
++            banner.setBackgroundColor(0x00000000);
++            banner.addJavascriptInterface(new BannerBridge(), "Stryker");
++            banner.loadDataWithBaseURL("file:///sdcard/Stryker/",
++                    sb.toString(), "text/html", "UTF-8", null);
++            banner.setVisibility(android.view.View.VISIBLE);
++        } catch (Exception e) {
++            banner.setVisibility(android.view.View.GONE);
++        }
 +    }
  }
 diff --git a/app/src/main/res/layout/fragment_dashboard.xml b/app/src/main/res/layout/fragment_dashboard.xml
