@@ -355,10 +355,10 @@ index 0000000..ba18847
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..dae785d
+index 0000000..d70ea57
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,845 @@
+@@ -0,0 +1,896 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -499,7 +499,18 @@ index 0000000..dae785d
 +            });
 +            return;
 +        }
-+        GooseAcpClient.SessionInfo info = client.newSession(WORK_DIR, 20000);
++        GooseAcpClient.SessionInfo info = null;
++        String lastId = getPrefs().getString("last_session_id", null);
++        boolean resumed = false;
++        if (lastId != null) {
++            ui(() -> setStatus("Resuming…"));
++            info = client.loadSession(lastId, WORK_DIR, 20000);
++            if (info != null) resumed = true;
++        }
++        if (info == null) {
++            ui(() -> setStatus("Creating session…"));
++            info = client.newSession(WORK_DIR, 20000);
++        }
 +        if (info == null) {
 +            ui(() -> {
 +                setStatus("Session creation failed");
@@ -509,10 +520,47 @@ index 0000000..dae785d
 +        }
 +        sessionId = info.sessionId;
 +        String mode = info.modeId;
++        // Simpan sesi terakhir buat auto-resume
++        getPrefs().edit().putString("last_session_id", sessionId).apply();
++        final boolean wasResumed = resumed;
++        final String fSessionId = sessionId;
 +        ui(() -> {
 +            setStatus("Connected · mode: " + mode + " · " + sessionId);
-+            addSystem("Session ready (" + sessionId + "). Ask anything.");
++            if (wasResumed) {
++                addSystem("Resumed session (" + fSessionId + "). Loading history…");
++                loadHistory(fSessionId);
++            } else {
++                addSystem("Session ready (" + fSessionId + "). Ask anything.");
++            }
 +        });
++    }
++
++    private android.content.SharedPreferences getPrefs() {
++        return getSharedPreferences("ghost_prefs", MODE_PRIVATE);
++    }
++
++    /** Load previous chat history when resuming a session. */
++    private void loadHistory(String sid) {
++        new Thread(() -> {
++            List<String[]> history = GooseFiles.getSessionHistory(sid, 30);
++            ui(() -> {
++                if (history.isEmpty()) {
++                    addSystem("No previous messages found.");
++                    return;
++                }
++                addSystem("📜 Showing last " + history.size() + " messages:");
++                for (String[] msg : history) {
++                    String role = msg[0];
++                    String text = msg[1];
++                    if (role.equals("user")) {
++                        adapter.add(new ChatMessage(ChatMessage.Type.USER, text));
++                    } else {
++                        adapter.add(new ChatMessage(ChatMessage.Type.AGENT, text));
++                    }
++                }
++                scrollToBottom();
++            });
++        }, "goose-history").start();
 +    }
 +
 +    // ------------------------------------------------------------------
@@ -1027,7 +1075,8 @@ index 0000000..dae785d
 +                    return;
 +                }
 +                switchToSession(info.sessionId, info.modeId);
-+                addSystem("Resumed session " + s.sessionId + " — history replaying…");
++                addSystem("Resumed session " + s.sessionId + " — loading history…");
++                loadHistory(s.sessionId);
 +            });
 +        }, "goose-resume").start();
 +    }
@@ -1059,6 +1108,8 @@ index 0000000..dae785d
 +        streamingPos = -1;
 +        toolPositions.clear();
 +        adapter.clear();
++        // Simpan buat auto-resume
++        getPrefs().edit().putString("last_session_id", newSessionId).apply();
 +        setStatus("Connected · mode: " + modeId + " · " + sessionId);
 +        addSystem("Session ready (" + sessionId + "). Ask anything.");
 +    }
@@ -1206,10 +1257,10 @@ index 0000000..dae785d
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
 new file mode 100644
-index 0000000..dbadd91
+index 0000000..5a0ef2f
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
-@@ -0,0 +1,160 @@
+@@ -0,0 +1,228 @@
 +package com.zalexdev.stryker.goose;
 +
 +import com.zalexdev.stryker.utils.Core;
@@ -1333,6 +1384,74 @@ index 0000000..dbadd91
 +    /** Debug: return raw ls output for troubleshooting. */
 +    public static List<String> debugLsRaw() {
 +        return runChroot("ls -1 " + OUTPUT_DIR);
++    }
++
++    /**
++     * Read session history from chroot for resume display.
++     * Returns list of [role, text] pairs, last N messages.
++     * Role is "user" or "assistant". Skips tool calls for lightness.
++     */
++    public static List<String[]> getSessionHistory(String sessionId, int maxMessages) {
++        List<String[]> out = new ArrayList<>();
++        try {
++            // Sanitize session ID (no path traversal)
++            if (sessionId == null || !sessionId.matches("[a-zA-Z0-9_-]+")) return out;
++            String path = "/root/.config/goose/sessions/" + sessionId + ".jsonl";
++            List<String> lines = runChroot("cat '" + path + "'");
++            // Parse dari belakang, ambil maxMessages terakhir
++            List<String[]> all = new ArrayList<>();
++            for (String line : lines) {
++                line = line.trim();
++                if (line.isEmpty() || !line.startsWith("{")) continue;
++                try {
++                    org.json.JSONObject obj = new org.json.JSONObject(line);
++                    String role = obj.optString("role", "");
++                    if (!role.equals("user") && !role.equals("assistant")) continue;
++                    // Content bisa string atau array
++                    String text = null;
++                    if (obj.has("content")) {
++                        Object c = obj.get("content");
++                        if (c instanceof String) {
++                            text = (String) c;
++                        } else if (c instanceof org.json.JSONArray) {
++                            org.json.JSONArray arr = (org.json.JSONArray) c;
++                            StringBuilder sb = new StringBuilder();
++                            for (int i = 0; i < arr.length(); i++) {
++                                Object item = arr.get(i);
++                                if (item instanceof org.json.JSONObject) {
++                                    org.json.JSONObject jo = (org.json.JSONObject) item;
++                                    if ("text".equals(jo.optString("type"))) {
++                                        if (sb.length() > 0) sb.append("\n");
++                                        sb.append(jo.optString("text", ""));
++                                    }
++                                } else if (item instanceof String) {
++                                    if (sb.length() > 0) sb.append("\n");
++                                    sb.append((String) item);
++                                }
++                            }
++                            text = sb.toString();
++                        }
++                    }
++                    // Fallback: coba field "text" langsung
++                    if ((text == null || text.isEmpty()) && obj.has("text")) {
++                        text = obj.optString("text", "");
++                    }
++                    if (text != null && !text.trim().isEmpty()) {
++                        // Truncate pesan yang kepanjangan (tool output nyangkut)
++                        if (text.length() > 2000) {
++                            text = text.substring(0, 2000) + "\n…[truncated]";
++                        }
++                        all.add(new String[]{role, text.trim()});
++                    }
++                } catch (Exception ignored) {}
++            }
++            // Ambil maxMessages terakhir
++            int start = Math.max(0, all.size() - maxMessages);
++            for (int i = start; i < all.size(); i++) {
++                out.add(all.get(i));
++            }
++        } catch (Exception ignored) {}
++        return out;
 +    }
 +
 +    /** List files in the goose output directory. */
