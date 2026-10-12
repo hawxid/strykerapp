@@ -355,10 +355,10 @@ index 0000000..ba18847
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..4c96978
+index 0000000..95c6b9d
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,897 @@
+@@ -0,0 +1,902 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -598,7 +598,12 @@ index 0000000..4c96978
 +                client.cancel(sessionId);
 +            } catch (Exception ignored) {}
 +        }, "goose-cancel").start();
-+        ui(() -> addSystem("Cancel requested…"));
++        ui(() -> {
++            addSystem("Cancel requested…");
++            // Reset langsung, jangan nunggu onTurnEnd (kadang nggak dateng)
++            working = false;
++            updateSendButton();
++        });
 +    }
 +
 +    private void showAttachBar(String filename) {
