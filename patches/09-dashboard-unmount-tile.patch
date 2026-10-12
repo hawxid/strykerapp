@@ -1,17 +1,20 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
-index 5022f70..f4fdcdb 100644
+index 5022f70..8dba962 100644
 --- a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
 +++ b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
-@@ -946,9 +946,32 @@ public class Dashboard extends Fragment {
-         t.add(new Tool("logs", R.string.dashboard_tile_logs, R.drawable.bug_report,
-                 R.drawable.dashboard_tile_bg_orange, 0xFFEF6C00, false,
-                 () -> receiver.changeFragment(R.id.logs_item)));
-+        t.add(new Tool("unmount", R.string.settings_unmount_title, R.drawable.stop,
-+                R.drawable.dashboard_tile_bg_red, 0xFFC62828, false,
-+                () -> confirmUnmountDashboard()));
-         return t;
+@@ -121,6 +121,7 @@ public class Dashboard extends Fragment {
+         view.findViewById(R.id.terminal).setOnClickListener(v -> openTerminal());
+         view.findViewById(R.id.dash_customize).setOnClickListener(v -> showCustomize());
+         view.findViewById(R.id.dash_report).setOnClickListener(v -> reportBug());
++        view.findViewById(R.id.dash_unmount).setOnClickListener(v -> confirmUnmountDashboard());
+         view.findViewById(R.id.dash_github).setOnClickListener(
+                 v -> openUrl(com.zalexdev.stryker.utils.Links.GITHUB));
+         view.findViewById(R.id.dash_site).setOnClickListener(
+@@ -1184,4 +1185,24 @@ public class Dashboard extends Fragment {
+             );
+         }
      }
- 
++
 +    /** Unmount chroot dari dashboard - SAMA PERSIS kayak Settings (killroot + close app). */
 +    private void confirmUnmountDashboard() {
 +        new MaterialAlertDialogBuilder(context)
@@ -31,7 +34,33 @@ index 5022f70..f4fdcdb 100644
 +                .setNegativeButton(android.R.string.cancel, null)
 +                .show();
 +    }
+ }
+diff --git a/app/src/main/res/layout/fragment_dashboard.xml b/app/src/main/res/layout/fragment_dashboard.xml
+index 2bdd5e2..261055a 100644
+--- a/app/src/main/res/layout/fragment_dashboard.xml
++++ b/app/src/main/res/layout/fragment_dashboard.xml
+@@ -737,6 +737,24 @@
+                     style="@style/DashboardRowChevron"
+                     android:src="@drawable/arrow_right" />
+             </LinearLayout>
 +
-     private boolean toolShown(Tool t) {
-         String key = PREF_TOOL + t.key;
-         return core.contains(key) ? core.getBoolean(key) : t.on;
++            <LinearLayout
++                android:id="@+id/dash_unmount"
++                style="@style/DashboardRow">
++
++                <ImageView
++                    style="@style/DashboardRowIcon"
++                    android:src="@drawable/stop"
++                    app:tint="#C62828" />
++
++                <com.google.android.material.textview.MaterialTextView
++                    style="@style/DashboardRowTitle"
++                    android:text="@string/settings_unmount_title" />
++
++                <ImageView
++                    style="@style/DashboardRowChevron"
++                    android:src="@drawable/arrow_right" />
++            </LinearLayout>
+         </LinearLayout>
+ 
+         <LinearLayout
