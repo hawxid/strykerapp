@@ -37,10 +37,10 @@ index 3ecfa78..56a0eaf 100644
          m.put(R.id.nuclei_item,       new DrawerSpec("Web scanner",      R.drawable.webscan,     0xFF3949AB));
 diff --git a/app/src/main/java/com/zalexdev/stryker/bluetooth/BluetoothFragment.java b/app/src/main/java/com/zalexdev/stryker/bluetooth/BluetoothFragment.java
 new file mode 100644
-index 0000000..e63237d
+index 0000000..241c2f3
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/bluetooth/BluetoothFragment.java
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,126 @@
 +package com.zalexdev.stryker.bluetooth;
 +
 +import android.os.Bundle;
@@ -53,6 +53,7 @@ index 0000000..e63237d
 +import androidx.fragment.app.Fragment;
 +import androidx.recyclerview.widget.LinearLayoutManager;
 +import androidx.recyclerview.widget.RecyclerView;
++import android.widget.Button;
 +import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 +import com.zalexdev.stryker.R;
 +import com.zalexdev.stryker.utils.Core;
@@ -84,7 +85,8 @@ index 0000000..e63237d
 +        adapter = new BtDeviceAdapter(devices, this::onDeviceTap);
 +        deviceList.setAdapter(adapter);
 +
-+        v.findViewById(R.id.bt_btn_bluebinder).setOnClickListener(x -> runCmd("bluebinder", false));
++        updateBluebinderBtn(v);
++        v.findViewById(R.id.bt_btn_bluebinder).setOnClickListener(x -> toggleBluebinder(v));
 +        v.findViewById(R.id.bt_btn_up).setOnClickListener(x -> runCmd("hciconfig hci0 up && hciconfig", false));
 +        v.findViewById(R.id.bt_btn_interfaces).setOnClickListener(x -> runCmd("hciconfig", false));
 +        v.findViewById(R.id.bt_btn_scan).setOnClickListener(x -> runCmd("hcitool scan", true));
@@ -117,6 +119,24 @@ index 0000000..e63237d
 +            })
 +            .setNegativeButton("Batal", null)
 +            .show();
++    }
++
++    private boolean bluebinderRunning = false;
++
++    private void updateBluebinderBtn(View v) {
++        android.widget.Button b = v.findViewById(R.id.bt_btn_bluebinder);
++        b.setText(bluebinderRunning ? "Stop Bluebinder" : "Start Bluebinder");
++    }
++
++    private void toggleBluebinder(View v) {
++        if (bluebinderRunning) {
++            runCmd("pkill -f bluebinder; echo stopped", false);
++            bluebinderRunning = false;
++        } else {
++            runCmd("nohup bluebinder > /tmp/bluebinder.log 2>&1 & echo 'started pid '$!", false);
++            bluebinderRunning = true;
++        }
++        updateBluebinderBtn(v);
 +    }
 +
 +    private void runCmd(String cmd, boolean isScan) {
