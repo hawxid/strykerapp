@@ -355,10 +355,10 @@ index 0000000..ba18847
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..c150252
+index 0000000..8a733ff
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,780 @@
+@@ -0,0 +1,844 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -668,6 +668,70 @@ index 0000000..c150252
 +        String textFile = pendingTextFile;
 +        String fileName = pendingFileName;
 +        if (userText.isEmpty() && img64 == null && textFile == null) return;
++
++        // --- Slash commands (intercept sebelum kirim ke Ghost) ---
++        if (userText.startsWith("/") && img64 == null && textFile == null) {
++            String cmdName = userText.split("\\s+")[0].toLowerCase();
++            if (cmdName.equals("/help") || cmdName.equals("/?")) {
++                inputView.setText("");
++                final String help = SlashCommands.helpText();
++                ui(() -> {
++                    adapter.add(new ChatMessage(ChatMessage.Type.USER, userText));
++                    adapter.add(new ChatMessage(ChatMessage.Type.AGENT, help));
++                    scrollToBottom();
++                });
++                return;
++            }
++            if (cmdName.equals("/clear")) {
++                inputView.setText("");
++                ui(() -> {
++                    adapter.clear();
++                    addSystem("Chat cleared.");
++                });
++                return;
++            }
++            String expanded = SlashCommands.expand(userText);
++            if (expanded != null) {
++                // Tampilkan command asli, kirim expanded ke Ghost
++                final String origDisplay = userText;
++                userText = expanded;
++                // Lanjut ke bawah dengan userText = expanded, display = orig
++                inputView.setText("");
++                inputView.setHint("Ask goose…");
++                hideAttachBar();
++                pendingImageBase64 = null;
++                pendingImageMime = null;
++                pendingTextFile = null;
++                pendingFileName = null;
++                working = true;
++                updateSendButton();
++                final String fText = userText;
++                final String fDisplay = origDisplay + "\n→ " + expanded;
++                ui(() -> {
++                    adapter.add(new ChatMessage(ChatMessage.Type.USER, fDisplay));
++                    scrollToBottom();
++                    streamingPos = -1;
++                    scrollToBottom();
++                });
++                final String sText = fText;
++                final String sImg64 = img64;
++                final String sImgMime = imgMime;
++                new Thread(() -> {
++                    try {
++                        client.promptWithImage(sessionId, sText, sImg64, sImgMime);
++                    } catch (Exception e) {
++                        ui(() -> {
++                            addSystem("Send failed: " + e.getMessage());
++                            working = false;
++                            updateSendButton();
++                        });
++                    }
++                }, "goose-prompt").start();
++                return;
++            }
++            // Unknown slash command: kirim apa adanya ke Ghost
++        }
++
 +        // Prompt lengkap (dengan isi file) untuk goose
 +        String fullText = userText;
 +        if (textFile != null) {
@@ -1141,10 +1205,10 @@ index 0000000..c150252
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
 new file mode 100644
-index 0000000..1c92785
+index 0000000..dbadd91
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,160 @@
 +package com.zalexdev.stryker.goose;
 +
 +import com.zalexdev.stryker.utils.Core;
@@ -1167,51 +1231,34 @@ index 0000000..1c92785
 +    public static final String OUTPUT_DIR = "/root/goose_output";
 +    public static final String EXPORT_DIR = "/sdcard/Stryker/goose_files";
 +
-+    /** Run a command in the chroot via su, return stdout lines. */
++    /** Run a command in the chroot via su, return stdout lines.
++     *  Pattern mengikuti BasicExploitLaunch yang terbukti jalan:
++     *  kirim command + newline kosong (bukan "exit"), close stdin,
++     *  baca stdout sampe EOF baru stderr. */
 +    private static List<String> runChroot(String cmd) {
 +        List<String> out = new ArrayList<>();
 +        try {
 +            Process p = Runtime.getRuntime().exec("su -mm");
 +            OutputStream os = p.getOutputStream();
-+            // Kirim command, terus exit eksplisit (jangan andelin EOF doang)
 +            os.write((Core.EXECUTE + " '" + cmd + "'\n").getBytes(StandardCharsets.UTF_8));
-+            os.write("exit\n".getBytes(StandardCharsets.UTF_8));
++            os.write("\n".getBytes(StandardCharsets.UTF_8));
 +            os.flush();
 +            os.close();
-+            // Baca stdout & stderr barengan biar nggak deadlock
-+            StringBuilder stdout = new StringBuilder();
-+            StringBuilder stderr = new StringBuilder();
-+            Thread tOut = new Thread(() -> {
-+                try {
-+                    BufferedReader r = new BufferedReader(new InputStreamReader(
-+                            p.getInputStream(), StandardCharsets.UTF_8));
-+                    String line;
-+                    while ((line = r.readLine()) != null) {
-+                        synchronized (stdout) { stdout.append(line).append("\n"); }
-+                    }
-+                } catch (Exception ignored) {}
-+            });
-+            Thread tErr = new Thread(() -> {
-+                try {
-+                    BufferedReader r = new BufferedReader(new InputStreamReader(
-+                            p.getErrorStream(), StandardCharsets.UTF_8));
-+                    String line;
-+                    while ((line = r.readLine()) != null) {
-+                        synchronized (stderr) { stderr.append(line).append("\n"); }
-+                    }
-+                } catch (Exception ignored) {}
-+            });
-+            tOut.setDaemon(true);
-+            tErr.setDaemon(true);
-+            tOut.start();
-+            tErr.start();
-+            p.waitFor();
-+            tOut.join(2000);
-+            tErr.join(2000);
-+            p.destroy();
-+            for (String line : stdout.toString().split("\n")) {
++            // Baca stdout sampe EOF (blocking)
++            BufferedReader br = new BufferedReader(new InputStreamReader(
++                    p.getInputStream(), StandardCharsets.UTF_8));
++            String line;
++            while ((line = br.readLine()) != null) {
 +                if (!line.trim().isEmpty()) out.add(line);
 +            }
++            br.close();
++            // Baru baca stderr (diabaikan, cuma biar nggak block)
++            BufferedReader brErr = new BufferedReader(new InputStreamReader(
++                    p.getErrorStream(), StandardCharsets.UTF_8));
++            while (brErr.readLine() != null) {}
++            brErr.close();
++            p.waitFor();
++            p.destroy();
 +        } catch (Exception ignored) {}
 +        return out;
 +    }
@@ -1320,6 +1367,130 @@ index 0000000..1c92785
 +            }
 +        }
 +        return null;
++    }
++}
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/SlashCommands.java b/app/src/main/java/com/zalexdev/stryker/goose/SlashCommands.java
+new file mode 100644
+index 0000000..28143d1
+--- /dev/null
++++ b/app/src/main/java/com/zalexdev/stryker/goose/SlashCommands.java
+@@ -0,0 +1,118 @@
++package com.zalexdev.stryker.goose;
++
++import org.json.JSONArray;
++import org.json.JSONObject;
++
++import java.io.File;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.Files;
++import java.util.ArrayList;
++import java.util.List;
++
++/**
++ * Customizable slash commands for Ghost.
++ * Config lives at /sdcard/Stryker/goose/slash_commands.json — edit without rebuilding!
++ *
++ * Format:
++ * {
++ *   "commands": [
++ *     {"name": "/nmap", "desc": "Quick nmap scan", "prompt": "run a quick nmap scan on {args}"},
++ *     {"name": "/cve", "desc": "Lookup CVE details", "prompt": "lookup details for {args}"}
++ *   ]
++ * }
++ *
++ * {args} = everything after the command name.
++ * Built-in: /help (list), /clear (clear chat) — handled by the activity, not sent to Ghost.
++ */
++public class SlashCommands {
++
++    public static final String CONFIG_PATH = "/sdcard/Stryker/goose/slash_commands.json";
++
++    public static class Cmd {
++        public final String name;
++        public final String desc;
++        public final String prompt;
++        Cmd(String name, String desc, String prompt) {
++            this.name = name;
++            this.desc = desc;
++            this.prompt = prompt;
++        }
++    }
++
++    /** Default commands created on first run. */
++    private static String defaultJson() {
++        return "{\n" +
++            "  \"commands\": [\n" +
++            "    {\"name\": \"/nmap\", \"desc\": \"Quick nmap scan\", \"prompt\": \"run a quick nmap scan on {args} and explain the results\"},\n" +
++            "    {\"name\": \"/ping\", \"desc\": \"Ping a host\", \"prompt\": \"ping {args} with 4 packets\"},\n" +
++            "    {\"name\": \"/cve\", \"desc\": \"Lookup CVE details\", \"prompt\": \"lookup details for {args} including severity, description, and affected versions\"},\n" +
++            "    {\"name\": \"/scan\", \"desc\": \"Full port scan\", \"prompt\": \"do a comprehensive port scan on {args} using nmap\"},\n" +
++            "    {\"name\": \"/report\", \"desc\": \"Generate report\", \"prompt\": \"create a summary report of our conversation and save it to /sdcard/Stryker/goose/report.md\"}\n" +
++            "  ]\n" +
++            "}\n";
++    }
++
++    /** Ensure config exists (create default if missing). */
++    public static void ensureConfig() {
++        try {
++            File f = new File(CONFIG_PATH);
++            if (!f.exists()) {
++                f.getParentFile().mkdirs();
++                Files.write(f.toPath(), defaultJson().getBytes(StandardCharsets.UTF_8));
++            }
++        } catch (Exception ignored) {}
++    }
++
++    /** Load commands from config. Returns empty list on error. */
++    public static List<Cmd> load() {
++        List<Cmd> out = new ArrayList<>();
++        try {
++            ensureConfig();
++            String json = new String(Files.readAllBytes(new File(CONFIG_PATH).toPath()),
++                    StandardCharsets.UTF_8);
++            JSONObject root = new JSONObject(json);
++            JSONArray arr = root.optJSONArray("commands");
++            if (arr == null) return out;
++            for (int i = 0; i < arr.length(); i++) {
++                JSONObject o = arr.getJSONObject(i);
++                String name = o.optString("name", "").trim();
++                if (!name.startsWith("/")) name = "/" + name;
++                out.add(new Cmd(name, o.optString("desc", ""),
++                        o.optString("prompt", "{args}")));
++            }
++        } catch (Exception ignored) {}
++        return out;
++    }
++
++    /** Find a command by name (e.g. "/nmap"). Returns null if not found. */
++    public static Cmd find(String name) {
++        for (Cmd c : load()) {
++            if (c.name.equalsIgnoreCase(name)) return c;
++        }
++        return null;
++    }
++
++    /** Expand a slash input into the full prompt. Returns null if not a slash command. */
++    public static String expand(String input) {
++        if (input == null || !input.trim().startsWith("/")) return null;
++        String trimmed = input.trim();
++        int sp = trimmed.indexOf(' ');
++        String name = sp < 0 ? trimmed : trimmed.substring(0, sp);
++        String args = sp < 0 ? "" : trimmed.substring(sp + 1).trim();
++        Cmd cmd = find(name);
++        if (cmd == null) return null;
++        return cmd.prompt.replace("{args}", args);
++    }
++
++    /** Build help text listing all commands. */
++    public static String helpText() {
++        StringBuilder sb = new StringBuilder("**Ghost Commands:**\n\n");
++        sb.append("`/help` — Show this list\n");
++        sb.append("`/clear` — Clear chat\n\n");
++        for (Cmd c : load()) {
++            sb.append("`").append(c.name).append("` — ").append(c.desc).append("\n");
++        }
++        sb.append("\n_Edit `/sdcard/Stryker/goose/slash_commands.json` to customize._");
++        return sb.toString();
 +    }
 +}
 diff --git a/app/src/main/res/drawable/chat_bubble_agent.xml b/app/src/main/res/drawable/chat_bubble_agent.xml
