@@ -1,3 +1,17 @@
+diff --git a/app/proguard-rules.pro b/app/proguard-rules.pro
+index ae42c2c..86ef514 100644
+--- a/app/proguard-rules.pro
++++ b/app/proguard-rules.pro
+@@ -96,3 +96,9 @@
+ -keep class com.jcraft.jsch.** { *; }
+ -keepclassmembers class com.jcraft.jsch.** { *; }
+ -dontwarn com.jcraft.jsch.**
++
++# Dashboard HTML banner JS bridge (patch 11) - jangan di-strip R8
++-keepclassmembers class com.zalexdev.stryker.dashboard.Dashboard$BannerBridge {
++    @android.webkit.JavascriptInterface <methods>;
++}
++-keepattributes JavascriptInterface
 diff --git a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
 index 8dba962..24783dc 100644
 --- a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
