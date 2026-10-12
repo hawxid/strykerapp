@@ -13,7 +13,7 @@ index ae42c2c..86ef514 100644
 +}
 +-keepattributes JavascriptInterface
 diff --git a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
-index 8dba962..24783dc 100644
+index 8dba962..97c18eb 100644
 --- a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
 +++ b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
 @@ -116,11 +116,10 @@ public class Dashboard extends Fragment {
@@ -38,7 +38,7 @@ index 8dba962..24783dc 100644
      }
  
  
-@@ -1205,4 +1204,80 @@ public class Dashboard extends Fragment {
+@@ -1205,4 +1204,98 @@ public class Dashboard extends Fragment {
                  .setNegativeButton(android.R.string.cancel, null)
                  .show();
      }
@@ -65,14 +65,17 @@ index 8dba962..24783dc 100644
 +    }
 +
 +    /** Load custom HTML banner. Dir: /sdcard/Stryker/banner/
-+     *  Config: banner/config.json -> {"file": "banner.html", "height": 140, "enabled": true}
-+     *  Tanpa rebuild buat ubah file/tinggi. */
++     *  Config: banner/config.json ->
++     *   File mode: {"file": "banner.html", "height": 140, "enabled": true}
++     *   URL mode:  {"url": "http://localhost:8080", "height": 300, "enabled": true}
++     *  Tanpa rebuild buat ubah config. */
 +    private void loadDashboardBanner(android.view.View view) {
 +        android.webkit.WebView banner = view.findViewById(R.id.dash_banner);
 +        if (banner == null) return;
 +        final String DIR = "/sdcard/Stryker/banner/";
 +        try {
 +            String htmlFile = "banner.html";
++            String url = null;
 +            int heightDp = 140;
 +            boolean enabled = true;
 +            java.io.File cfg = new java.io.File(DIR + "config.json");
@@ -85,6 +88,7 @@ index 8dba962..24783dc 100644
 +                r.close();
 +                org.json.JSONObject j = new org.json.JSONObject(sb.toString());
 +                if (j.has("file")) htmlFile = j.getString("file");
++                if (j.has("url")) url = j.getString("url");
 +                if (j.has("height")) heightDp = j.getInt("height");
 +                if (j.has("enabled")) enabled = j.getBoolean("enabled");
 +            }
@@ -92,27 +96,41 @@ index 8dba962..24783dc 100644
 +                banner.setVisibility(android.view.View.GONE);
 +                return;
 +            }
-+            java.io.File f = new java.io.File(DIR + htmlFile);
-+            if (!f.exists()) {
-+                banner.setVisibility(android.view.View.GONE);
-+                return;
-+            }
-+            StringBuilder sb = new StringBuilder();
-+            java.io.BufferedReader r = new java.io.BufferedReader(
-+                    new java.io.FileReader(f));
-+            String line;
-+            while ((line = r.readLine()) != null) sb.append(line).append("\n");
-+            r.close();
 +            float density = context.getResources().getDisplayMetrics().density;
 +            int heightPx = (int) (heightDp * density);
 +            android.view.ViewGroup.LayoutParams lp = banner.getLayoutParams();
 +            lp.height = heightPx;
 +            banner.setLayoutParams(lp);
 +            banner.getSettings().setJavaScriptEnabled(true);
++            // Allow localhost access (untuk URL mode)
++            banner.getSettings().setAllowContentAccess(true);
 +            banner.setBackgroundColor(0x00000000);
 +            banner.addJavascriptInterface(new BannerBridge(), "Stryker");
-+            banner.loadDataWithBaseURL("file://" + DIR,
-+                    sb.toString(), "text/html", "UTF-8", null);
++            if (url != null && !url.isEmpty()) {
++                // URL mode: load dari localhost/server
++                // Hanya allow http://localhost dan http://127.0.0.1 demi keamanan
++                if (url.startsWith("http://localhost") || url.startsWith("http://127.0.0.1")) {
++                    banner.loadUrl(url);
++                } else {
++                    banner.setVisibility(android.view.View.GONE);
++                    return;
++                }
++            } else {
++                // File mode: baca via Java, load pake loadDataWithBaseURL
++                java.io.File f = new java.io.File(DIR + htmlFile);
++                if (!f.exists()) {
++                    banner.setVisibility(android.view.View.GONE);
++                    return;
++                }
++                StringBuilder sb = new StringBuilder();
++                java.io.BufferedReader r = new java.io.BufferedReader(
++                        new java.io.FileReader(f));
++                String line;
++                while ((line = r.readLine()) != null) sb.append(line).append("\n");
++                r.close();
++                banner.loadDataWithBaseURL("file://" + DIR,
++                        sb.toString(), "text/html", "UTF-8", null);
++            }
 +            banner.setVisibility(android.view.View.VISIBLE);
 +        } catch (Exception e) {
 +            banner.setVisibility(android.view.View.GONE);
