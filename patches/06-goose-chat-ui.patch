@@ -355,10 +355,10 @@ index 0000000..ba18847
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..8a733ff
+index 0000000..dae785d
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,844 @@
+@@ -0,0 +1,845 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -675,8 +675,9 @@ index 0000000..8a733ff
 +            if (cmdName.equals("/help") || cmdName.equals("/?")) {
 +                inputView.setText("");
 +                final String help = SlashCommands.helpText();
++                final String uText = userText;
 +                ui(() -> {
-+                    adapter.add(new ChatMessage(ChatMessage.Type.USER, userText));
++                    adapter.add(new ChatMessage(ChatMessage.Type.USER, uText));
 +                    adapter.add(new ChatMessage(ChatMessage.Type.AGENT, help));
 +                    scrollToBottom();
 +                });
