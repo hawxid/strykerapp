@@ -1,5 +1,5 @@
 diff --git a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
-index db84977..13748b4 100644
+index db84977..c3a6b87 100644
 --- a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
 +++ b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
 @@ -28,6 +28,10 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
@@ -13,16 +13,13 @@ index db84977..13748b4 100644
      const val COLOR_TYPE_BEGIN = -3
      const val COLOR_TYPE_END = 15
  
-@@ -133,6 +137,57 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
+@@ -133,6 +137,54 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
    internal fun applyColorScheme(view: TerminalView?, extraKeysView: ExtraKeysView?) {
      validateColors()
  
-+    // MONDBG v10: background image PoC - reads /sdcard/Stryker/terminal/term_bg.png if present.
-+    // Balik ke layer depan (parent RelativeLayout, per-tab) seperti v5: overview per-tab
-+    // jadi benar, tidak ada gambar decor dobel. Anti-mengerut: bitmap di-pre-scale COVER
-+    // ukuran layar + drawable gravity=TOP|CENTER_HORIZONTAL -> saat view menyusut
-+    // (keyboard), gambar nempel di atas, yang ke-crop cuma bawahnya (tidak squish).
-+    // Bitmap di-decode sekali lalu di-cache. Debug patch, hapus setelah PoC.
++    // Terminal background image: reads /sdcard/Stryker/terminal/term_bg.png if present.
++    // Bitmap di-pre-scale COVER ukuran layar, gravity TOP|CENTER_HORIZONTAL,
++    // di-cache biar nggak decode ulang tiap apply.
 +    var bgImageOk = false
 +    if (view != null) {
 +      try {
@@ -33,7 +30,7 @@ index db84977..13748b4 100644
 +        } else ""
 +        var bitmap = if (key.isNotEmpty() && key == cachedBgKey) cachedBgBitmap else null
 +        if (bitmap == null && key.isNotEmpty()) {
-+          val raw = android.graphics.BitmapFactory.decodeFile(bgFile.absolutePath) "${raw.width}x${raw.height}" else "null"}")
++          val raw = android.graphics.BitmapFactory.decodeFile(bgFile.absolutePath)
 +          if (raw != null) {
 +            val scale = maxOf(
 +              dm.widthPixels / raw.width.toFloat(),
@@ -71,12 +68,12 @@ index db84977..13748b4 100644
      if (view != null) {
        val scheme = TerminalColorScheme()
        scheme.updateWith(foregroundColor, backgroundColor, cursorColor, color)
-@@ -141,7 +196,10 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
+@@ -141,7 +193,10 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
          session.emulator.setColorScheme(scheme)
        }
        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 -        view.setBackgroundColor(TerminalColors.parse(backgroundColor))
-+        // MONDBG v10: skip solid color kalau gambar kepasang (view sudah transparan)
++        // Skip solid color kalau gambar kepasang (view sudah transparan)
 +        if (!bgImageOk) {
 +          view.setBackgroundColor(TerminalColors.parse(backgroundColor))
 +        }
