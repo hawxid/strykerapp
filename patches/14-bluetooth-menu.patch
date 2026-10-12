@@ -37,10 +37,10 @@ index 3ecfa78..56a0eaf 100644
          m.put(R.id.nuclei_item,       new DrawerSpec("Web scanner",      R.drawable.webscan,     0xFF3949AB));
 diff --git a/app/src/main/java/com/zalexdev/stryker/bluetooth/BluetoothFragment.java b/app/src/main/java/com/zalexdev/stryker/bluetooth/BluetoothFragment.java
 new file mode 100644
-index 0000000..69fe698
+index 0000000..e63237d
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/bluetooth/BluetoothFragment.java
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,106 @@
 +package com.zalexdev.stryker.bluetooth;
 +
 +import android.os.Bundle;
@@ -51,15 +51,27 @@ index 0000000..69fe698
 +import androidx.annotation.NonNull;
 +import androidx.annotation.Nullable;
 +import androidx.fragment.app.Fragment;
-+import com.google.android.material.textfield.TextInputEditText;
++import androidx.recyclerview.widget.LinearLayoutManager;
++import androidx.recyclerview.widget.RecyclerView;
++import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 +import com.zalexdev.stryker.R;
 +import com.zalexdev.stryker.utils.Core;
 +import java.util.ArrayList;
++import java.util.List;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
 +
 +public class BluetoothFragment extends Fragment {
 +    private Core core;
 +    private TextView output;
-+    private TextInputEditText macInput;
++    private RecyclerView deviceList;
++    private BtDeviceAdapter adapter;
++    private List<BtDevice> devices = new ArrayList<>();
++
++    public static class BtDevice {
++        String mac, name;
++        BtDevice(String mac, String name) { this.mac = mac; this.name = name; }
++    }
 +
 +    @Nullable
 +    @Override
@@ -67,36 +79,119 @@ index 0000000..69fe698
 +        View v = inflater.inflate(R.layout.fragment_bluetooth, container, false);
 +        core = new Core(requireContext());
 +        output = v.findViewById(R.id.bt_output);
-+        macInput = v.findViewById(R.id.bt_mac_input);
-+        v.findViewById(R.id.bt_btn_bluebinder).setOnClickListener(x -> runCmd("bluebinder"));
-+        v.findViewById(R.id.bt_btn_up).setOnClickListener(x -> runCmd("hciconfig hci0 up && hciconfig"));
-+        v.findViewById(R.id.bt_btn_interfaces).setOnClickListener(x -> runCmd("hciconfig"));
-+        v.findViewById(R.id.bt_btn_scan).setOnClickListener(x -> runCmd("hcitool scan"));
-+        v.findViewById(R.id.bt_btn_l2ping).setOnClickListener(x -> {
-+            String mac = macInput.getText() != null ? macInput.getText().toString().trim() : "";
-+            if (mac.isEmpty()) { output.setText("Masukkan MAC address dulu"); return; }
-+            runCmd("l2ping -c 4 " + mac);
-+        });
-+        v.findViewById(R.id.bt_btn_sdp).setOnClickListener(x -> {
-+            String mac = macInput.getText() != null ? macInput.getText().toString().trim() : "";
-+            if (mac.isEmpty()) { output.setText("Masukkan MAC address dulu"); return; }
-+            runCmd("sdptool browse " + mac);
-+        });
++        deviceList = v.findViewById(R.id.bt_device_list);
++        deviceList.setLayoutManager(new LinearLayoutManager(requireContext()));
++        adapter = new BtDeviceAdapter(devices, this::onDeviceTap);
++        deviceList.setAdapter(adapter);
++
++        v.findViewById(R.id.bt_btn_bluebinder).setOnClickListener(x -> runCmd("bluebinder", false));
++        v.findViewById(R.id.bt_btn_up).setOnClickListener(x -> runCmd("hciconfig hci0 up && hciconfig", false));
++        v.findViewById(R.id.bt_btn_interfaces).setOnClickListener(x -> runCmd("hciconfig", false));
++        v.findViewById(R.id.bt_btn_scan).setOnClickListener(x -> runCmd("hcitool scan", true));
 +        return v;
 +    }
 +
-+    private void runCmd(String cmd) {
++    private void onDeviceTap(BtDevice d) {
++        new MaterialAlertDialogBuilder(requireContext())
++            .setTitle(d.name + "\n" + d.mac)
++            .setItems(new String[]{"L2Ping", "L2Ping Custom...", "Browse Services (SDP)", "Get Info"}, (dialog, which) -> {
++                if (which == 0) runCmd("l2ping -c 4 " + d.mac, false);
++                else if (which == 1) showL2pingCustom(d);
++                else if (which == 2) runCmd("sdptool browse " + d.mac, false);
++                else runCmd("hcitool info " + d.mac, false);
++            })
++            .show();
++    }
++
++    private void showL2pingCustom(BtDevice d) {
++        final android.widget.EditText input = new android.widget.EditText(requireContext());
++        input.setHint("contoh: -c 10 -s 100 -f");
++        input.setText("-c 4");
++        new MaterialAlertDialogBuilder(requireContext())
++            .setTitle("L2Ping " + d.mac)
++            .setMessage("Custom args (kosongkan = default):\n-f = flood, -s = size, -i = interval")
++            .setView(input)
++            .setPositiveButton("Run", (dlg, w) -> {
++                String args = input.getText().toString().trim();
++                runCmd("l2ping " + args + " " + d.mac, false);
++            })
++            .setNegativeButton("Batal", null)
++            .show();
++    }
++
++    private void runCmd(String cmd, boolean isScan) {
 +        output.setText("$ " + cmd + "\n...");
 +        new Thread(() -> {
 +            try {
 +                ArrayList<String> out = core.customChrootCommand(cmd, true);
 +                StringBuilder sb = new StringBuilder("$ " + cmd + "\n");
 +                for (String l : out) sb.append(l).append("\n");
-+                requireActivity().runOnUiThread(() -> output.setText(sb.toString()));
++                String result = sb.toString();
++                requireActivity().runOnUiThread(() -> {
++                    output.setText(result);
++                    if (isScan) parseScanResults(out);
++                });
 +            } catch (Exception e) {
 +                requireActivity().runOnUiThread(() -> output.setText("Error: " + e.getMessage()));
 +            }
 +        }, "bt-cmd").start();
++    }
++
++    private void parseScanResults(List<String> lines) {
++        devices.clear();
++        Pattern p = Pattern.compile("([0-9A-Fa-f:]{17})\\s+(.+)");
++        for (String line : lines) {
++            Matcher m = p.matcher(line.trim());
++            if (m.find()) devices.add(new BtDevice(m.group(1), m.group(2).trim()));
++        }
++        adapter.notifyDataSetChanged();
++    }
++}
+diff --git a/app/src/main/java/com/zalexdev/stryker/bluetooth/BtDeviceAdapter.java b/app/src/main/java/com/zalexdev/stryker/bluetooth/BtDeviceAdapter.java
+new file mode 100644
+index 0000000..ba47c01
+--- /dev/null
++++ b/app/src/main/java/com/zalexdev/stryker/bluetooth/BtDeviceAdapter.java
+@@ -0,0 +1,41 @@
++package com.zalexdev.stryker.bluetooth;
++
++import android.view.LayoutInflater;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.TextView;
++import androidx.annotation.NonNull;
++import androidx.recyclerview.widget.RecyclerView;
++import com.zalexdev.stryker.R;
++import java.util.List;
++
++public class BtDeviceAdapter extends RecyclerView.Adapter<BtDeviceAdapter.VH> {
++    public interface OnTap { void onTap(BluetoothFragment.BtDevice d); }
++    private final List<BluetoothFragment.BtDevice> devices;
++    private final OnTap listener;
++
++    public BtDeviceAdapter(List<BluetoothFragment.BtDevice> devices, OnTap listener) {
++        this.devices = devices; this.listener = listener;
++    }
++
++    @NonNull @Override
++    public VH onCreateViewHolder(@NonNull ViewGroup p, int t) {
++        View v = LayoutInflater.from(p.getContext()).inflate(android.R.layout.simple_list_item_2, p, false);
++        return new VH(v);
++    }
++
++    @Override
++    public void onBindViewHolder(@NonNull VH h, int pos) {
++        BluetoothFragment.BtDevice d = devices.get(pos);
++        h.t1.setText(d.name);
++        h.t2.setText(d.mac);
++        h.itemView.setOnClickListener(x -> listener.onTap(d));
++    }
++
++    @Override public int getItemCount() { return devices.size(); }
++
++    static class VH extends RecyclerView.ViewHolder {
++        TextView t1, t2;
++        VH(View v) { super(v); t1 = v.findViewById(android.R.id.text1); t2 = v.findViewById(android.R.id.text2); }
 +    }
 +}
 diff --git a/app/src/main/res/layout/drawer_content.xml b/app/src/main/res/layout/drawer_content.xml
@@ -116,10 +211,10 @@ index 62d5640..b926810 100644
              android:layout_height="wrap_content"
 diff --git a/app/src/main/res/layout/fragment_bluetooth.xml b/app/src/main/res/layout/fragment_bluetooth.xml
 new file mode 100644
-index 0000000..53b61cf
+index 0000000..f8fa122
 --- /dev/null
 +++ b/app/src/main/res/layout/fragment_bluetooth.xml
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,84 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
 +    android:layout_width="match_parent"
@@ -139,55 +234,58 @@ index 0000000..53b61cf
 +            android:layout_width="wrap_content"
 +            android:layout_height="wrap_content"
 +            android:layout_marginTop="4dp"
-+            android:text="1. Start Bluebinder  2. Bring hci0 Up  3. Scan!"
++            android:text="1. Start Bluebinder  2. Bring hci0 Up  3. Scan, tap device!"
 +            android:textSize="12sp" />
-+        <com.google.android.material.button.MaterialButton
-+            android:id="@+id/bt_btn_bluebinder"
++        <LinearLayout
 +            android:layout_width="match_parent"
 +            android:layout_height="wrap_content"
 +            android:layout_marginTop="16dp"
-+            android:text="Start Bluebinder" />
-+        <com.google.android.material.button.MaterialButton
-+            android:id="@+id/bt_btn_up"
-+            android:layout_width="match_parent"
-+            android:layout_height="wrap_content"
-+            android:layout_marginTop="8dp"
-+            android:text="Bring hci0 Up" />
-+        <com.google.android.material.button.MaterialButton
-+            android:id="@+id/bt_btn_interfaces"
-+            android:layout_width="match_parent"
-+            android:layout_height="wrap_content"
-+            android:layout_marginTop="8dp"
-+            android:text="List Interfaces (hciconfig)" />
-+        <com.google.android.material.button.MaterialButton
-+            android:id="@+id/bt_btn_scan"
-+            android:layout_width="match_parent"
-+            android:layout_height="wrap_content"
-+            android:layout_marginTop="8dp"
-+            android:text="Scan Devices (hcitool scan)" />
-+        <com.google.android.material.textfield.TextInputLayout
-+            android:layout_width="match_parent"
-+            android:layout_height="wrap_content"
-+            android:layout_marginTop="16dp"
-+            android:hint="MAC address (XX:XX:XX:XX:XX:XX)">
-+            <com.google.android.material.textfield.TextInputEditText
-+                android:id="@+id/bt_mac_input"
-+                android:layout_width="match_parent"
++            android:orientation="horizontal">
++            <com.google.android.material.button.MaterialButton
++                android:id="@+id/bt_btn_bluebinder"
++                android:layout_width="0dp"
 +                android:layout_height="wrap_content"
-+                android:inputType="text" />
-+        </com.google.android.material.textfield.TextInputLayout>
-+        <com.google.android.material.button.MaterialButton
-+            android:id="@+id/bt_btn_l2ping"
++                android:layout_weight="1"
++                android:text="Bluebinder" />
++            <com.google.android.material.button.MaterialButton
++                android:id="@+id/bt_btn_up"
++                android:layout_width="0dp"
++                android:layout_height="wrap_content"
++                android:layout_marginStart="8dp"
++                android:layout_weight="1"
++                android:text="hci0 Up" />
++        </LinearLayout>
++        <LinearLayout
 +            android:layout_width="match_parent"
 +            android:layout_height="wrap_content"
 +            android:layout_marginTop="8dp"
-+            android:text="L2Ping" />
-+        <com.google.android.material.button.MaterialButton
-+            android:id="@+id/bt_btn_sdp"
-+            android:layout_width="match_parent"
++            android:orientation="horizontal">
++            <com.google.android.material.button.MaterialButton
++                android:id="@+id/bt_btn_interfaces"
++                android:layout_width="0dp"
++                android:layout_height="wrap_content"
++                android:layout_weight="1"
++                android:text="Interfaces" />
++            <com.google.android.material.button.MaterialButton
++                android:id="@+id/bt_btn_scan"
++                android:layout_width="0dp"
++                android:layout_height="wrap_content"
++                android:layout_marginStart="8dp"
++                android:layout_weight="1"
++                android:text="Scan" />
++        </LinearLayout>
++        <com.google.android.material.textview.MaterialTextView
++            android:layout_width="wrap_content"
 +            android:layout_height="wrap_content"
++            android:layout_marginTop="16dp"
++            android:text="Devices (tap for actions):"
++            android:textStyle="bold" />
++        <androidx.recyclerview.widget.RecyclerView
++            android:id="@+id/bt_device_list"
++            android:layout_width="match_parent"
++            android:layout_height="200dp"
 +            android:layout_marginTop="8dp"
-+            android:text="Browse Services (sdptool)" />
++            android:background="#1A1A1A" />
 +        <TextView
 +            android:id="@+id/bt_output"
 +            android:layout_width="match_parent"
