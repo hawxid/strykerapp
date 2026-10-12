@@ -1257,10 +1257,10 @@ index 0000000..d70ea57
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
 new file mode 100644
-index 0000000..5a0ef2f
+index 0000000..7b44cd7
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseFiles.java
-@@ -0,0 +1,228 @@
+@@ -0,0 +1,220 @@
 +package com.zalexdev.stryker.goose;
 +
 +import com.zalexdev.stryker.utils.Core;
@@ -1387,68 +1387,60 @@ index 0000000..5a0ef2f
 +    }
 +
 +    /**
-+     * Read session history from chroot for resume display.
-+     * Returns list of [role, text] pairs, last N messages.
-+     * Role is "user" or "assistant". Skips tool calls for lightness.
++     * Read session history from Goose SQLite DB.
++     * Path: /root/.local/share/goose/sessions/sessions.db
++     * Returns list of [role, text] pairs, last N messages (chronological).
 +     */
 +    public static List<String[]> getSessionHistory(String sessionId, int maxMessages) {
 +        List<String[]> out = new ArrayList<>();
 +        try {
-+            // Sanitize session ID (no path traversal)
 +            if (sessionId == null || !sessionId.matches("[a-zA-Z0-9_-]+")) return out;
-+            String path = "/root/.config/goose/sessions/" + sessionId + ".jsonl";
-+            List<String> lines = runChroot("cat '" + path + "'");
-+            // Parse dari belakang, ambil maxMessages terakhir
-+            List<String[]> all = new ArrayList<>();
-+            for (String line : lines) {
-+                line = line.trim();
-+                if (line.isEmpty() || !line.startsWith("{")) continue;
++            String db = "/root/.local/share/goose/sessions/sessions.db";
++            // Pakai -json biar output terstruktur, pakai separator aman
++            String sql = "SELECT role, content_json FROM messages WHERE session_id='" +
++                    sessionId + "' ORDER BY created_timestamp DESC LIMIT " + maxMessages;
++            List<String> lines = runChroot(
++                    "sqlite3 -json '" + db + "' \"" + sql + "\"");
++            if (lines.isEmpty()) return out;
++            // Gabung semua line jadi satu JSON
++            StringBuilder jsonSb = new StringBuilder();
++            for (String l : lines) jsonSb.append(l);
++            String json = jsonSb.toString().trim();
++            if (!json.startsWith("[")) return out;
++            org.json.JSONArray arr = new org.json.JSONArray(json);
++            // Hasil DESC, jadi reverse biar kronologis
++            List<String[]> reversed = new ArrayList<>();
++            for (int i = 0; i < arr.length(); i++) {
++                org.json.JSONObject row = arr.getJSONObject(i);
++                String role = row.optString("role", "");
++                if (!role.equals("user") && !role.equals("assistant")) continue;
++                String contentJson = row.optString("content_json", "");
++                if (contentJson.isEmpty()) continue;
 +                try {
-+                    org.json.JSONObject obj = new org.json.JSONObject(line);
-+                    String role = obj.optString("role", "");
-+                    if (!role.equals("user") && !role.equals("assistant")) continue;
-+                    // Content bisa string atau array
-+                    String text = null;
-+                    if (obj.has("content")) {
-+                        Object c = obj.get("content");
-+                        if (c instanceof String) {
-+                            text = (String) c;
-+                        } else if (c instanceof org.json.JSONArray) {
-+                            org.json.JSONArray arr = (org.json.JSONArray) c;
-+                            StringBuilder sb = new StringBuilder();
-+                            for (int i = 0; i < arr.length(); i++) {
-+                                Object item = arr.get(i);
-+                                if (item instanceof org.json.JSONObject) {
-+                                    org.json.JSONObject jo = (org.json.JSONObject) item;
-+                                    if ("text".equals(jo.optString("type"))) {
-+                                        if (sb.length() > 0) sb.append("\n");
-+                                        sb.append(jo.optString("text", ""));
-+                                    }
-+                                } else if (item instanceof String) {
-+                                    if (sb.length() > 0) sb.append("\n");
-+                                    sb.append((String) item);
-+                                }
-+                            }
-+                            text = sb.toString();
++                    org.json.JSONArray contentArr = new org.json.JSONArray(contentJson);
++                    StringBuilder textSb = new StringBuilder();
++                    for (int j = 0; j < contentArr.length(); j++) {
++                        org.json.JSONObject item = contentArr.getJSONObject(j);
++                        if ("text".equals(item.optString("type"))) {
++                            String t = item.optString("text", "");
++                            // Skip turn-context (metadata, bukan pesan asli)
++                            if (t.startsWith("<turn-context>")) continue;
++                            if (textSb.length() > 0) textSb.append("\n");
++                            textSb.append(t);
 +                        }
 +                    }
-+                    // Fallback: coba field "text" langsung
-+                    if ((text == null || text.isEmpty()) && obj.has("text")) {
-+                        text = obj.optString("text", "");
-+                    }
-+                    if (text != null && !text.trim().isEmpty()) {
-+                        // Truncate pesan yang kepanjangan (tool output nyangkut)
++                    String text = textSb.toString().trim();
++                    if (!text.isEmpty()) {
 +                        if (text.length() > 2000) {
 +                            text = text.substring(0, 2000) + "\n…[truncated]";
 +                        }
-+                        all.add(new String[]{role, text.trim()});
++                        reversed.add(new String[]{role, text});
 +                    }
 +                } catch (Exception ignored) {}
 +            }
-+            // Ambil maxMessages terakhir
-+            int start = Math.max(0, all.size() - maxMessages);
-+            for (int i = start; i < all.size(); i++) {
-+                out.add(all.get(i));
++            // Reverse biar kronologis (tertua dulu)
++            for (int i = reversed.size() - 1; i >= 0; i--) {
++                out.add(reversed.get(i));
 +            }
 +        } catch (Exception ignored) {}
 +        return out;
