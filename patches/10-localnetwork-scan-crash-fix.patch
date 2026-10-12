@@ -1,0 +1,104 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/localnetwork/LocalMain.java b/app/src/main/java/com/zalexdev/stryker/localnetwork/LocalMain.java
+index 2e51fc3..b6c9335 100644
+--- a/app/src/main/java/com/zalexdev/stryker/localnetwork/LocalMain.java
++++ b/app/src/main/java/com/zalexdev/stryker/localnetwork/LocalMain.java
+@@ -153,21 +153,25 @@ public class LocalMain extends Fragment {
+     }
+ 
+     private void reloadDevicesFromPersistentSource() {
+-        ArrayList<Device> restored = null;
+-        if (mainActivity != null && mainActivity.getDevices() != null
+-                && !mainActivity.getDevices().isEmpty()) {
+-            restored = mainActivity.getDevices();
+-        } else if (core != null) {
+-            ArrayList<Device> last = core.getLastNetworkScan();
+-            if (last != null && !last.isEmpty()) {
+-                restored = last;
+-                if (mainActivity != null) {
+-                    mainActivity.setDevices(restored);
++        try {
++            ArrayList<Device> restored = null;
++            if (mainActivity != null && mainActivity.getDevices() != null
++                    && !mainActivity.getDevices().isEmpty()) {
++                restored = mainActivity.getDevices();
++            } else if (core != null) {
++                ArrayList<Device> last = core.getLastNetworkScan();
++                if (last != null && !last.isEmpty()) {
++                    restored = last;
++                    if (mainActivity != null) {
++                        mainActivity.setDevices(restored);
++                    }
+                 }
+             }
+-        }
+-        if (restored != null) {
+-            devicesmain = restored;
++            if (restored != null) {
++                devicesmain = restored;
++            }
++        } catch (Exception e) {
++            devicesmain = new ArrayList<>();
+         }
+     }
+ 
+diff --git a/app/src/main/java/com/zalexdev/stryker/utils/Core.java b/app/src/main/java/com/zalexdev/stryker/utils/Core.java
+index 7f2c7b4..c877769 100644
+--- a/app/src/main/java/com/zalexdev/stryker/utils/Core.java
++++ b/app/src/main/java/com/zalexdev/stryker/utils/Core.java
+@@ -1353,19 +1353,47 @@ public class Core {
+             }}
+     }
+     public void saveLastNetworkScan(ArrayList<Device> devices){
+-        ArrayList<String> devs = new ArrayList<>();
+-        for (Device d : devices){
+-            devs.add(d.toJSON());
++        try {
++            java.io.File f = new java.io.File(context.getFilesDir(), "last_network_scan.json");
++            StringBuilder sb = new StringBuilder("[");
++            for (int i = 0; i < devices.size(); i++) {
++                if (i > 0) sb.append(",");
++                sb.append(devices.get(i).toJSON());
++            }
++            sb.append("]");
++            java.io.FileWriter w = new java.io.FileWriter(f);
++            w.write(sb.toString());
++            w.close();
++            // Hapus data lama di SharedPreferences biar nggak bingung
++            try { preferences.edit().remove("last_network_scan").apply(); } catch (Exception ignored) {}
++        } catch (Exception e) {
++            // Kalo gagal save, hapus file biar nggak load data korup
++            try { new java.io.File(context.getFilesDir(), "last_network_scan.json").delete(); } catch (Exception ignored) {}
+         }
+-        putListString("last_network_scan",devs);
+     }
+     public ArrayList<Device> getLastNetworkScan(){
+         ArrayList<Device> devices = new ArrayList<>();
+-        ArrayList<String> devs = getListString("last_network_scan");
+-        for (String d : devs){
+-            Device device = new Device();
+-            device.restoreFromJSON(d);
+-            devices.add(device);
++        try {
++            java.io.File f = new java.io.File(context.getFilesDir(), "last_network_scan.json");
++            if (!f.exists()) return devices;
++            StringBuilder sb = new StringBuilder();
++            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f));
++            String line;
++            while ((line = r.readLine()) != null) sb.append(line);
++            r.close();
++            String json = sb.toString().trim();
++            if (!json.startsWith("[")) return devices;
++            org.json.JSONArray arr = new org.json.JSONArray(json);
++            for (int i = 0; i < arr.length(); i++) {
++                try {
++                    Device device = new Device();
++                    device.restoreFromJSON(arr.getJSONObject(i).toString());
++                    devices.add(device);
++                } catch (Exception ignored) {}
++            }
++        } catch (Exception e) {
++            // File korup: hapus biar nggak crash loop
++            try { new java.io.File(context.getFilesDir(), "last_network_scan.json").delete(); } catch (Exception ignored) {}
+         }
+         return devices;
+     }
