@@ -368,10 +368,10 @@ index 0000000..ba18847
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..a45fe8a
+index 0000000..954e373
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,906 @@
+@@ -0,0 +1,912 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -554,6 +554,9 @@ index 0000000..a45fe8a
 +
 +    /** Load previous chat history when resuming a session. */
 +    private void loadHistory(String sid) {
++        // Jangan load 2x
++        if (historyLoaded) return;
++        historyLoaded = true;
 +        new Thread(() -> {
 +            com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(this);
 +            List<String[]> history = GooseFiles.getSessionHistory(core, sid, 30);
@@ -1143,6 +1146,9 @@ index 0000000..a45fe8a
 +
 +    // Current browser path for the file explorer
 +    private String browserPath = GooseFiles.GOOSE_DIR;
++
++    // Guard biar history cuma di-load sekali per activity instance
++    private boolean historyLoaded = false;
 +
 +    private void showFilesDialog() {
 +        GooseFiles.ensureGooseDir();
