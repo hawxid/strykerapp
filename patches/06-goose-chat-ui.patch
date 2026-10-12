@@ -368,10 +368,10 @@ index 0000000..ba18847
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..954e373
+index 0000000..b693a7f
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,912 @@
+@@ -0,0 +1,951 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -1156,6 +1156,32 @@ index 0000000..954e373
 +        showBrowserDialog();
 +    }
 +
++    /** Open file with external app via Android chooser (e.g. MT Manager). */
++    private void openWith(File file) {
++        try {
++            android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(
++                    this, getPackageName() + ".provider", file);
++            String mime = getContentResolver().getType(uri);
++            if (mime == null) {
++                String n = file.getName().toLowerCase();
++                if (n.endsWith(".html") || n.endsWith(".htm")) mime = "text/html";
++                else if (n.endsWith(".md")) mime = "text/markdown";
++                else if (n.endsWith(".json")) mime = "application/json";
++                else if (n.endsWith(".txt") || n.endsWith(".log")) mime = "text/plain";
++                else mime = "*/*";
++            }
++            android.content.Intent intent = new android.content.Intent(
++                    android.content.Intent.ACTION_VIEW);
++            intent.setDataAndType(uri, mime);
++            intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
++            startActivity(android.content.Intent.createChooser(intent,
++                    "Open with..."));
++        } catch (Exception e) {
++            Toast.makeText(this, "Cannot open: " + e.getMessage(),
++                    Toast.LENGTH_LONG).show();
++        }
++    }
++
 +    /** Simple file browser dialog with back navigation. */
 +    private void showBrowserDialog() {
 +        List<File> items = GooseFiles.listDir(browserPath);
@@ -1201,15 +1227,28 @@ index 0000000..954e373
 +                    } else {
 +                        String n = sel.getName().toLowerCase();
 +                        if (n.endsWith(".html") || n.endsWith(".htm")) {
-+                            android.content.Intent i = new android.content.Intent(
-+                                    this, GhostVizActivity.class);
-+                            i.putExtra(GhostVizActivity.EXTRA_PATH,
-+                                    sel.getAbsolutePath());
-+                            i.putExtra(GhostVizActivity.EXTRA_TITLE, sel.getName());
-+                            startActivity(i);
++                            // Kasih pilihan: Ghost viewer atau app lain
++                            new AlertDialog.Builder(this)
++                                    .setTitle(sel.getName())
++                                    .setItems(new String[]{"👁️ Open in Ghost viewer",
++                                            "📂 Open with other app..."},
++                                            (d2, which2) -> {
++                                        if (which2 == 0) {
++                                            android.content.Intent i =
++                                                    new android.content.Intent(
++                                                    this, GhostVizActivity.class);
++                                            i.putExtra(GhostVizActivity.EXTRA_PATH,
++                                                    sel.getAbsolutePath());
++                                            i.putExtra(GhostVizActivity.EXTRA_TITLE,
++                                                    sel.getName());
++                                            startActivity(i);
++                                        } else {
++                                            openWith(sel);
++                                        }
++                                    })
++                                    .show();
 +                        } else {
-+                            Toast.makeText(this, "File: " + sel.getAbsolutePath() +
-+                                    "\nOpen via file manager", Toast.LENGTH_LONG).show();
++                            openWith(sel);
 +                        }
 +                    }
 +                })
