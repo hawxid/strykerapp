@@ -1,0 +1,16 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/coremanger/CoreManager.java b/app/src/main/java/com/zalexdev/stryker/coremanger/CoreManager.java
+index 9fd1d34..5c1ea38 100644
+--- a/app/src/main/java/com/zalexdev/stryker/coremanger/CoreManager.java
++++ b/app/src/main/java/com/zalexdev/stryker/coremanger/CoreManager.java
+@@ -335,6 +335,11 @@ public class CoreManager extends Fragment {
+     }
+ 
+     private void installPipDirect(String q) {
++        // Validasi nama package: cegah command injection via ; & | $ etc.
++        if (q == null || !q.matches("[A-Za-z0-9_.-]+") ) {
++            toaster(getString(R.string.core_mgr_install_failed, q));
++            return;
++        }
+         toaster(getString(R.string.core_mgr_installing, q));
+         new Thread(() -> {
+             boolean ok = Core.contains(core.customChrootCommand("pip3 install --break-system-packages " + q), "Successfully installed");

@@ -49,10 +49,10 @@ index 1b99e0e..5022f70 100644
              TapTargetView.showFor(activity,
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 new file mode 100644
-index 0000000..1134b5c
+index 0000000..54c4973
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,202 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.view.Gravity;
@@ -230,19 +230,6 @@ index 0000000..1134b5c
 +        notifyItemInserted(messages.size() - 1);
 +    }
 +
-+    /** Insert at position 0 (for history loading). */
-+    public void addFirst(ChatMessage m) {
-+        messages.add(0, m);
-+        notifyItemInserted(0);
-+    }
-+
-+    /** Insert list at position 0 preserving order (for history loading). */
-+    public void addAllFirst(java.util.List<ChatMessage> list) {
-+        if (list == null || list.isEmpty()) return;
-+        messages.addAll(0, list);
-+        notifyItemRangeInserted(0, list.size());
-+    }
-+
 +    public void clear() {
 +        int n = messages.size();
 +        messages.clear();
@@ -368,10 +355,10 @@ index 0000000..ba18847
 +}
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 new file mode 100644
-index 0000000..27a6823
+index 0000000..6258e6b
 --- /dev/null
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-@@ -0,0 +1,951 @@
+@@ -0,0 +1,944 @@
 +package com.zalexdev.stryker.goose;
 +
 +import android.app.AlertDialog;
@@ -554,9 +541,6 @@ index 0000000..27a6823
 +
 +    /** Load previous chat history when resuming a session. */
 +    private void loadHistory(String sid) {
-+        // Jangan load 2x untuk sesi yang sama; tapi boleh untuk sesi beda
-+        if (sid != null && sid.equals(historyLoadedForSession)) return;
-+        historyLoadedForSession = sid;
 +        new Thread(() -> {
 +            com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(this);
 +            List<String[]> history = GooseFiles.getSessionHistory(core, sid, 30);
@@ -565,20 +549,16 @@ index 0000000..27a6823
 +                    addSystem("No previous messages found.");
 +                    return;
 +                }
-+                // Build list dulu, terus insert di posisi 0 (paling atas)
-+                List<ChatMessage> histMsgs = new ArrayList<>();
-+                histMsgs.add(new ChatMessage(ChatMessage.Type.SYSTEM,
-+                        "📜 Showing last " + history.size() + " messages:"));
++                addSystem("📜 Showing last " + history.size() + " messages:");
 +                for (String[] msg : history) {
 +                    String role = msg[0];
 +                    String text = msg[1];
 +                    if (role.equals("user")) {
-+                        histMsgs.add(new ChatMessage(ChatMessage.Type.USER, text));
++                        adapter.add(new ChatMessage(ChatMessage.Type.USER, text));
 +                    } else {
-+                        histMsgs.add(new ChatMessage(ChatMessage.Type.AGENT, text));
++                        adapter.add(new ChatMessage(ChatMessage.Type.AGENT, text));
 +                    }
 +                }
-+                adapter.addAllFirst(histMsgs);
 +                scrollToBottom();
 +            });
 +        }, "goose-history").start();
@@ -1148,7 +1128,7 @@ index 0000000..27a6823
 +    private String browserPath = GooseFiles.GOOSE_DIR;
 +
 +    // Guard biar history cuma di-load sekali per sesi (bukan per activity)
-+    private String historyLoadedForSession = null;
++    // TODO: rollback - guard dihapus, balik ke versi simple
 +
 +    private void showFilesDialog() {
 +        GooseFiles.ensureGooseDir();
