@@ -1,0 +1,111 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
+index 8dba962..8fa894d 100644
+--- a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
++++ b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
+@@ -116,11 +116,10 @@ public class Dashboard extends Fragment {
+         renderCounts();
+         buildTools();
+ 
+-        view.findViewById(R.id.dash_hero).setOnClickListener(
+-                v -> receiver.changeFragment(R.id.wifi_item));
+         view.findViewById(R.id.terminal).setOnClickListener(v -> openTerminal());
+         view.findViewById(R.id.dash_customize).setOnClickListener(v -> showCustomize());
+         view.findViewById(R.id.dash_report).setOnClickListener(v -> reportBug());
++        loadDashboardBanner(view);
+         view.findViewById(R.id.dash_unmount).setOnClickListener(v -> confirmUnmountDashboard());
+         view.findViewById(R.id.dash_github).setOnClickListener(
+                 v -> openUrl(com.zalexdev.stryker.utils.Links.GITHUB));
+@@ -183,7 +182,7 @@ public class Dashboard extends Fragment {
+ 
+         setupVmCard(view);
+ 
+-        showFirstScanTip(view.findViewById(R.id.dash_hero));
++
+     }
+ 
+ 
+@@ -1205,4 +1204,41 @@ public class Dashboard extends Fragment {
+                 .setNegativeButton(android.R.string.cancel, null)
+                 .show();
+     }
++
++    /** JavascriptInterface buat HTML banner: kasih akses chroot ke JavaScript. */
++    private class BannerBridge {
++        @android.webkit.JavascriptInterface
++        public String run(String cmd) {
++            try {
++                java.util.ArrayList<String> out = core.customChrootCommand(cmd, true);
++                StringBuilder sb = new StringBuilder();
++                for (String l : out) sb.append(l).append("\n");
++                return sb.toString();
++            } catch (Exception e) {
++                return "Error: " + e.getMessage();
++            }
++        }
++        @android.webkit.JavascriptInterface
++        public void toast(String msg) {
++            if (activity != null) activity.runOnUiThread(() ->
++                android.widget.Toast.makeText(context, msg,
++                    android.widget.Toast.LENGTH_SHORT).show());
++        }
++    }
++
++    /** Load custom HTML banner dari /sdcard/Stryker/dashboard_banner.html (tanpa rebuild). */
++    private void loadDashboardBanner(android.view.View view) {
++        android.webkit.WebView banner = view.findViewById(R.id.dash_banner);
++        if (banner == null) return;
++        java.io.File htmlFile = new java.io.File("/sdcard/Stryker/dashboard_banner.html");
++        if (!htmlFile.exists()) {
++            banner.setVisibility(android.view.View.GONE);
++            return;
++        }
++        banner.getSettings().setJavaScriptEnabled(true);
++        banner.setBackgroundColor(0x00000000);
++        banner.addJavascriptInterface(new BannerBridge(), "Stryker");
++        banner.loadUrl("file://" + htmlFile.getAbsolutePath());
++        banner.setVisibility(android.view.View.VISIBLE);
++    }
+ }
+diff --git a/app/src/main/res/layout/fragment_dashboard.xml b/app/src/main/res/layout/fragment_dashboard.xml
+index 261055a..4c8d7a2 100644
+--- a/app/src/main/res/layout/fragment_dashboard.xml
++++ b/app/src/main/res/layout/fragment_dashboard.xml
+@@ -562,34 +562,11 @@
+             </LinearLayout>
+         </com.google.android.material.card.MaterialCardView>
+ 
+-        <LinearLayout
+-            android:id="@+id/dash_hero"
++        <WebView
++            android:id="@+id/dash_banner"
+             android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:background="@drawable/dash_hero_bg"
+-            android:clickable="true"
+-            android:focusable="true"
+-            android:gravity="center"
+-            android:minHeight="60dp"
+-            android:orientation="horizontal"
+-            android:paddingStart="24dp"
+-            android:paddingEnd="24dp">
+-
+-            <ImageView
+-                android:layout_width="22dp"
+-                android:layout_height="22dp"
+-                android:src="@drawable/wifi"
+-                app:tint="@android:color/white" />
+-
+-            <com.google.android.material.textview.MaterialTextView
+-                android:layout_width="wrap_content"
+-                android:layout_height="wrap_content"
+-                android:layout_marginStart="12dp"
+-                android:text="@string/dashboard_hero_scan"
+-                android:textColor="@android:color/white"
+-                android:textSize="16sp"
+-                android:textStyle="bold" />
+-        </LinearLayout>
++            android:layout_height="140dp"
++            android:visibility="gone" />
+ 
+         <com.google.android.material.textview.MaterialTextView
+             style="@style/DashboardSection"
