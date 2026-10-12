@@ -1,0 +1,85 @@
+diff --git a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
+index db84977..13748b4 100644
+--- a/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
++++ b/terminal/src/main/java/com/stryker/terminal/component/colorscheme/data.kt
+@@ -28,6 +28,10 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
+     val COLOR_META_PATH = arrayOf(CONTEXT_META_NAME)
+     val COLOR_PATH = arrayOf(CONTEXT_META_NAME, CONTEXT_COLOR_NAME)
+ 
++    // Cache bitmap bg image (pre-scale COVER layar)
++    private var cachedBgBitmap: android.graphics.Bitmap? = null
++    private var cachedBgKey: String = ""
++
+     const val COLOR_TYPE_BEGIN = -3
+     const val COLOR_TYPE_END = 15
+ 
+@@ -133,6 +137,57 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
+   internal fun applyColorScheme(view: TerminalView?, extraKeysView: ExtraKeysView?) {
+     validateColors()
+ 
++    // MONDBG v10: background image PoC - reads /sdcard/Stryker/terminal/term_bg.png if present.
++    // Balik ke layer depan (parent RelativeLayout, per-tab) seperti v5: overview per-tab
++    // jadi benar, tidak ada gambar decor dobel. Anti-mengerut: bitmap di-pre-scale COVER
++    // ukuran layar + drawable gravity=TOP|CENTER_HORIZONTAL -> saat view menyusut
++    // (keyboard), gambar nempel di atas, yang ke-crop cuma bawahnya (tidak squish).
++    // Bitmap di-decode sekali lalu di-cache. Debug patch, hapus setelah PoC.
++    var bgImageOk = false
++    if (view != null) {
++      try {
++        val bgFile = java.io.File("/sdcard/Stryker/terminal/term_bg.png")
++        val dm = view.resources.displayMetrics
++        val key = if (bgFile.exists() && bgFile.canRead()) {
++          "${bgFile.absolutePath}:${bgFile.length()}:${bgFile.lastModified()}:${dm.widthPixels}x${dm.heightPixels}"
++        } else ""
++        var bitmap = if (key.isNotEmpty() && key == cachedBgKey) cachedBgBitmap else null
++        if (bitmap == null && key.isNotEmpty()) {
++          val raw = android.graphics.BitmapFactory.decodeFile(bgFile.absolutePath) "${raw.width}x${raw.height}" else "null"}")
++          if (raw != null) {
++            val scale = maxOf(
++              dm.widthPixels / raw.width.toFloat(),
++              dm.heightPixels / raw.height.toFloat()
++            )
++            bitmap = android.graphics.Bitmap.createScaledBitmap(
++              raw,
++              (raw.width * scale).toInt(),
++              (raw.height * scale).toInt(),
++              true
++            )
++            bitmap.density = android.graphics.Bitmap.DENSITY_NONE
++            raw.recycle()
++            cachedBgBitmap = bitmap
++            cachedBgKey = key
++          }
++        } else if (bitmap != null) {
++        }
++        val parent = view.getParent() as? android.view.View
++        if (bitmap != null && parent != null) {
++          val drawable = android.graphics.drawable.BitmapDrawable(view.resources, bitmap)
++          drawable.gravity = android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL
++          parent.background = drawable
++          view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
++          bgImageOk = true
++        } else {
++          if (parent != null) {
++            parent.background = null
++          }
++        }
++      } catch (_: Exception) {
++      }
++    }
++
+     if (view != null) {
+       val scheme = TerminalColorScheme()
+       scheme.updateWith(foregroundColor, backgroundColor, cursorColor, color)
+@@ -141,7 +196,10 @@ open class NeoColorScheme : CodeGenObject, ConfigFileBasedObject {
+         session.emulator.setColorScheme(scheme)
+       }
+       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-        view.setBackgroundColor(TerminalColors.parse(backgroundColor))
++        // MONDBG v10: skip solid color kalau gambar kepasang (view sudah transparan)
++        if (!bgImageOk) {
++          view.setBackgroundColor(TerminalColors.parse(backgroundColor))
++        }
+       }
+     }
+ 
