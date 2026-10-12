@@ -1,5 +1,5 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
-index 8dba962..b17d155 100644
+index 8dba962..0d83d79 100644
 --- a/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
 +++ b/app/src/main/java/com/zalexdev/stryker/dashboard/Dashboard.java
 @@ -116,11 +116,10 @@ public class Dashboard extends Fragment {
@@ -24,7 +24,7 @@ index 8dba962..b17d155 100644
      }
  
  
-@@ -1205,4 +1204,54 @@ public class Dashboard extends Fragment {
+@@ -1205,4 +1204,80 @@ public class Dashboard extends Fragment {
                  .setNegativeButton(android.R.string.cancel, null)
                  .show();
      }
@@ -50,24 +50,50 @@ index 8dba962..b17d155 100644
 +        }
 +    }
 +
-+    /** Load custom HTML banner dari /sdcard/Stryker/dashboard_banner.html (tanpa rebuild).
-+     *  Pake loadDataWithBaseURL (baca via Java) biar nggak kena ERR_ACCESS_DENIED
-+     *  yang ngeblokir file:// di WebView Android 7+. */
++    /** Load custom HTML banner. Config dari /sdcard/Stryker/dashboard_banner.json:
++     *  {"file": "banner.html", "height": 140, "enabled": true}
++     *  Tanpa rebuild buat ubah file/tinggi. */
 +    private void loadDashboardBanner(android.view.View view) {
 +        android.webkit.WebView banner = view.findViewById(R.id.dash_banner);
 +        if (banner == null) return;
-+        java.io.File htmlFile = new java.io.File("/sdcard/Stryker/dashboard_banner.html");
-+        if (!htmlFile.exists()) {
-+            banner.setVisibility(android.view.View.GONE);
-+            return;
-+        }
 +        try {
++            String htmlFile = "dashboard_banner.html";
++            int heightDp = 140;
++            boolean enabled = true;
++            java.io.File cfg = new java.io.File("/sdcard/Stryker/dashboard_banner.json");
++            if (cfg.exists()) {
++                StringBuilder sb = new StringBuilder();
++                java.io.BufferedReader r = new java.io.BufferedReader(
++                        new java.io.FileReader(cfg));
++                String l;
++                while ((l = r.readLine()) != null) sb.append(l);
++                r.close();
++                org.json.JSONObject j = new org.json.JSONObject(sb.toString());
++                if (j.has("file")) htmlFile = j.getString("file");
++                if (j.has("height")) heightDp = j.getInt("height");
++                if (j.has("enabled")) enabled = j.getBoolean("enabled");
++            }
++            if (!enabled) {
++                banner.setVisibility(android.view.View.GONE);
++                return;
++            }
++            java.io.File f = new java.io.File("/sdcard/Stryker/" + htmlFile);
++            if (!f.exists()) {
++                banner.setVisibility(android.view.View.GONE);
++                return;
++            }
 +            StringBuilder sb = new StringBuilder();
 +            java.io.BufferedReader r = new java.io.BufferedReader(
-+                    new java.io.FileReader(htmlFile));
++                    new java.io.FileReader(f));
 +            String line;
 +            while ((line = r.readLine()) != null) sb.append(line).append("\n");
 +            r.close();
++            // Set tinggi dari config
++            float density = context.getResources().getDisplayMetrics().density;
++            int heightPx = (int) (heightDp * density);
++            android.view.ViewGroup.LayoutParams lp = banner.getLayoutParams();
++            lp.height = heightPx;
++            banner.setLayoutParams(lp);
 +            banner.getSettings().setJavaScriptEnabled(true);
 +            banner.setBackgroundColor(0x00000000);
 +            banner.addJavascriptInterface(new BannerBridge(), "Stryker");
@@ -80,7 +106,7 @@ index 8dba962..b17d155 100644
 +    }
  }
 diff --git a/app/src/main/res/layout/fragment_dashboard.xml b/app/src/main/res/layout/fragment_dashboard.xml
-index 261055a..4c8d7a2 100644
+index 261055a..12a7c39 100644
 --- a/app/src/main/res/layout/fragment_dashboard.xml
 +++ b/app/src/main/res/layout/fragment_dashboard.xml
 @@ -562,34 +562,11 @@
@@ -92,7 +118,7 @@ index 261055a..4c8d7a2 100644
 +        <WebView
 +            android:id="@+id/dash_banner"
              android:layout_width="match_parent"
--            android:layout_height="wrap_content"
+             android:layout_height="wrap_content"
 -            android:background="@drawable/dash_hero_bg"
 -            android:clickable="true"
 -            android:focusable="true"
@@ -117,7 +143,6 @@ index 261055a..4c8d7a2 100644
 -                android:textSize="16sp"
 -                android:textStyle="bold" />
 -        </LinearLayout>
-+            android:layout_height="140dp"
 +            android:visibility="gone" />
  
          <com.google.android.material.textview.MaterialTextView
