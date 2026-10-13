@@ -33,7 +33,7 @@ index e517501..63a02c7 100644
                  try {
                      android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-index ba45797..de5e054 100644
+index ba45797..f8ae2ac 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 @@ -96,6 +96,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
@@ -44,7 +44,7 @@ index ba45797..de5e054 100644
          LinearLayoutManager lm = new LinearLayoutManager(this);
          lm.setStackFromEnd(true);
          messagesView.setLayoutManager(lm);
-@@ -779,6 +780,36 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -779,6 +780,22 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
      }
  
      /** Open file with external app via Android chooser (e.g. MT Manager). */
@@ -55,23 +55,9 @@ index ba45797..de5e054 100644
 +        wv.getSettings().setDisplayZoomControls(false);
 +        wv.getSettings().setLoadWithOverviewMode(true);
 +        wv.getSettings().setUseWideViewPort(true);
-+        try {
-+            java.io.File f = new java.io.File(path);
-+            android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(
-+                this, getPackageName() + ".provider", f);
-+            // Copy ke cache biar WebView bisa akses via file:///
-+            java.io.File cacheFile = new java.io.File(getCacheDir(), f.getName());
-+            java.io.InputStream in = getContentResolver().openInputStream(uri);
-+            java.io.OutputStream out = new java.io.FileOutputStream(cacheFile);
-+            byte[] buf = new byte[8192];
-+            int len;
-+            while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
-+            in.close(); out.close();
-+            wv.loadUrl("file://" + cacheFile.getAbsolutePath());
-+        } catch (Exception e) {
-+            android.widget.Toast.makeText(this, "Cannot open image", android.widget.Toast.LENGTH_SHORT).show();
-+            return;
-+        }
++        wv.getSettings().setAllowFileAccess(true);
++        // Load langsung dari path asli (sdcard bisa diakses WebView)
++        wv.loadUrl("file://" + path);
 +        wv.setOnLongClickListener(v -> { d.dismiss(); return true; });
 +        d.setContentView(wv);
 +        d.show();
