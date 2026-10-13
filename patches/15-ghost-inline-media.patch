@@ -1,0 +1,139 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
+index 54c4973..df93318 100644
+--- a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
++++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
+@@ -18,12 +18,18 @@ import java.util.List;
+ /** RecyclerView adapter for goose chat messages. */
+ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+ 
++    public interface OnFileClickListener { void onFileClick(String path); }
++    private OnFileClickListener fileClickListener;
++    public void setOnFileClickListener(OnFileClickListener l) { fileClickListener = l; }
++
+     private final List<ChatMessage> messages = new ArrayList<>();
+ 
+     static class VH extends RecyclerView.ViewHolder {
+         final LinearLayout bubble;
+         final MaterialTextView titleView;
+         final MaterialTextView bodyView;
++        final android.widget.ImageView mediaView;
++        final android.widget.Button fileCard;
+         View.OnClickListener expandClickListener;
+ 
+         VH(@NonNull View itemView) {
+@@ -31,6 +37,13 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+             bubble = itemView.findViewById(R.id.chat_bubble);
+             titleView = itemView.findViewById(R.id.chat_title);
+             bodyView = itemView.findViewById(R.id.chat_body);
++            mediaView = new android.widget.ImageView(itemView.getContext());
++            mediaView.setVisibility(View.GONE);
++            mediaView.setAdjustViewBounds(true);
++            bubble.addView(mediaView);
++            fileCard = new android.widget.Button(itemView.getContext());
++            fileCard.setVisibility(View.GONE);
++            bubble.addView(fileCard);
+         }
+     }
+ 
+@@ -100,6 +113,35 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+                 displayText += "\n(tap to expand)";
+             }
+         }
++        String mediaPath = null;
++        String filePath = null;
++        String fileName = null;
++        if (m.type == ChatMessage.Type.AGENT) {
++            java.util.regex.Matcher im = java.util.regex.Pattern.compile("\\[img:(.+?)\\]").matcher(displayText);
++            if (im.find()) {
++                try {
++                    java.io.File f = new java.io.File(im.group(1).trim());
++                    String cp = f.getCanonicalPath();
++                    String l = cp.toLowerCase();
++                    if (cp.startsWith("/sdcard/Stryker/goose/") && f.isFile()
++                        && (l.endsWith(".png") || l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".gif")))
++                        mediaPath = cp;
++                } catch (Exception ignored) {}
++                displayText = im.replaceAll("").trim();
++            }
++            java.util.regex.Matcher fm = java.util.regex.Pattern.compile("\\[file:(.+?)\\]").matcher(displayText);
++            if (fm.find()) {
++                try {
++                    java.io.File f = new java.io.File(fm.group(1).trim());
++                    String cp = f.getCanonicalPath();
++                    if (cp.startsWith("/sdcard/Stryker/goose/") && f.isFile()) {
++                        filePath = cp;
++                        fileName = f.getName();
++                    }
++                } catch (Exception ignored) {}
++                displayText = fm.replaceAll("").trim();
++            }
++        }
+         h.bodyView.setText(displayText);
+ 
+         boolean showTitle = m.title != null && !m.title.isEmpty();
+@@ -149,6 +191,33 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+             h.bubble.setOnClickListener(h.expandClickListener);
+             h.bodyView.setOnClickListener(h.expandClickListener);
+         }
++
++        if (mediaPath != null) {
++            final String fp = mediaPath;
++            h.mediaView.setVisibility(View.VISIBLE);
++            new Thread(() -> {
++                try {
++                    android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
++                    o.inSampleSize = 2;
++                    final android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeFile(fp, o);
++                    h.mediaView.post(() -> {
++                        if (b != null) h.mediaView.setImageBitmap(b);
++                        else h.mediaView.setVisibility(View.GONE);
++                    });
++                } catch (Exception e) {
++                    h.mediaView.post(() -> h.mediaView.setVisibility(View.GONE));
++                }
++            }).start();
++        } else h.mediaView.setVisibility(View.GONE);
++
++        if (filePath != null) {
++            final String fp2 = filePath;
++            h.fileCard.setVisibility(View.VISIBLE);
++            h.fileCard.setText("\uD83D\uDCC4 " + fileName);
++            h.fileCard.setOnClickListener(v -> {
++                if (fileClickListener != null) fileClickListener.onFileClick(fp2);
++            });
++        } else h.fileCard.setVisibility(View.GONE);
+     }
+ 
+     /** Mark all running tools as done (update title from ● running to ✓ done). */
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+index 9788f67..ac62388 100644
+--- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
++++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+@@ -95,6 +95,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+         attachClearButton.setOnClickListener(v -> clearAttachment());
+ 
+         adapter = new ChatAdapter();
++        adapter.setOnFileClickListener(p -> openGhostFile(new java.io.File(p)));
+         LinearLayoutManager lm = new LinearLayoutManager(this);
+         lm.setStackFromEnd(true);
+         messagesView.setLayoutManager(lm);
+@@ -778,6 +779,19 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+     }
+ 
+     /** Open file with external app via Android chooser (e.g. MT Manager). */
++    private void openGhostFile(File file) {
++        String n = file.getName().toLowerCase();
++        if (n.endsWith(".html") || n.endsWith(".htm")) {
++            android.content.Intent i = new android.content.Intent(
++                    this, GhostVizActivity.class);
++            i.putExtra(GhostVizActivity.EXTRA_PATH, file.getAbsolutePath());
++            i.putExtra(GhostVizActivity.EXTRA_TITLE, file.getName());
++            startActivity(i);
++        } else {
++            openWith(file);
++        }
++    }
++
+     private void openWith(File file) {
+         try {
+             android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(
