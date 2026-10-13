@@ -1,5 +1,5 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-index 54c4973..df93318 100644
+index 54c4973..535c89d 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 @@ -18,12 +18,18 @@ import java.util.List;
@@ -21,21 +21,32 @@ index 54c4973..df93318 100644
          View.OnClickListener expandClickListener;
  
          VH(@NonNull View itemView) {
-@@ -31,6 +37,13 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -31,6 +37,24 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
              bubble = itemView.findViewById(R.id.chat_bubble);
              titleView = itemView.findViewById(R.id.chat_title);
              bodyView = itemView.findViewById(R.id.chat_body);
 +            mediaView = new android.widget.ImageView(itemView.getContext());
 +            mediaView.setVisibility(View.GONE);
 +            mediaView.setAdjustViewBounds(true);
++            LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
++                LinearLayout.LayoutParams.MATCH_PARENT,
++                LinearLayout.LayoutParams.WRAP_CONTENT);
++            mlp.topMargin = 8;
++            mediaView.setLayoutParams(mlp);
++            mediaView.setMinimumHeight(200);
 +            bubble.addView(mediaView);
 +            fileCard = new android.widget.Button(itemView.getContext());
 +            fileCard.setVisibility(View.GONE);
++            LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(
++                LinearLayout.LayoutParams.MATCH_PARENT,
++                LinearLayout.LayoutParams.WRAP_CONTENT);
++            flp.topMargin = 8;
++            fileCard.setLayoutParams(flp);
 +            bubble.addView(fileCard);
          }
      }
  
-@@ -100,6 +113,35 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -100,6 +124,35 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
                  displayText += "\n(tap to expand)";
              }
          }
@@ -71,7 +82,7 @@ index 54c4973..df93318 100644
          h.bodyView.setText(displayText);
  
          boolean showTitle = m.title != null && !m.title.isEmpty();
-@@ -149,6 +191,33 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -149,6 +202,33 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
              h.bubble.setOnClickListener(h.expandClickListener);
              h.bodyView.setOnClickListener(h.expandClickListener);
          }
