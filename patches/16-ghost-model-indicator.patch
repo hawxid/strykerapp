@@ -1,5 +1,5 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-index ac62388..6c2cf09 100644
+index ac62388..78e12e1 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 @@ -165,7 +165,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
@@ -11,7 +11,7 @@ index ac62388..6c2cf09 100644
              if (wasResumed) {
                  loadHistory(fSessionId);
              } else {
-@@ -179,6 +179,42 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -179,6 +179,37 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
      }
  
      /** Load previous chat history when resuming a session. */
@@ -20,10 +20,9 @@ index ac62388..6c2cf09 100644
 +            String label = null;
 +            try {
 +                com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(this);
-+                String sql = "SELECT provider_name, model_config_json FROM sessions WHERE id='" +
-+                    sessionId.replaceAll("[^a-zA-Z0-9_-]", "") + "' LIMIT 1";
-+                java.util.ArrayList<String> out = core.customChrootCommand(
-+                    "sqlite3 -json /root/.local/share/goose/sessions/sessions.db "" + sql + """, true);
++                String safeId = sessionId.replaceAll("[^a-zA-Z0-9_]", "");
++                String cmd = "sqlite3 -json /root/.local/share/goose/sessions/sessions.db 'SELECT provider_name, model_config_json FROM sessions WHERE id=''" + safeId + "'' LIMIT 1'";
++                java.util.ArrayList<String> out = core.customChrootCommand(cmd, true);
 +                StringBuilder sb = new StringBuilder();
 +                for (String l : out) sb.append(l);
 +                String json = sb.toString().trim();
@@ -31,24 +30,20 @@ index ac62388..6c2cf09 100644
 +                    org.json.JSONArray arr = new org.json.JSONArray(json);
 +                    if (arr.length() > 0) {
 +                        org.json.JSONObject row = arr.getJSONObject(0);
-+                        String provider = row.optString("provider_name", "");
 +                        String mcj = row.optString("model_config_json", "");
 +                        String model = "";
-+                        if (!mcj.isEmpty()) {
-+                            org.json.JSONObject mc = new org.json.JSONObject(mcj);
-+                            model = mc.optString("model_name", "");
-+                        }
++                        if (!mcj.isEmpty()) model = new org.json.JSONObject(mcj).optString("model_name", "");
 +                        if (!model.isEmpty()) label = model;
-+                        else if (!provider.isEmpty()) label = provider;
++                        else label = row.optString("provider_name", "");
 +                    }
 +                }
 +            } catch (Exception ignored) {}
 +            final String fl = label;
 +            ui(() -> {
-+                if (fl != null) setStatus("Connected · " + fl + " · " + mode + " · " + sessionId);
-+                else setStatus("Connected · mode: " + mode + " · " + sessionId);
++                if (fl != null && !fl.isEmpty()) setStatus("Connected \u00b7 " + fl + " \u00b7 " + mode + " \u00b7 " + sessionId);
++                else setStatus("Connected \u00b7 mode: " + mode + " \u00b7 " + sessionId);
 +            });
-+        }, "goose-model").start();
++        }).start();
 +    }
 +
      private void loadHistory(String sid) {
