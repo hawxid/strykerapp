@@ -1,5 +1,5 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-index e517501..63a02c7 100644
+index 4909f25..f7022a0 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 @@ -19,6 +19,9 @@ import java.util.List;
@@ -12,7 +12,7 @@ index e517501..63a02c7 100644
      private OnFileClickListener fileClickListener;
      public void setOnFileClickListener(OnFileClickListener l) { fileClickListener = l; }
  
-@@ -131,7 +134,7 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -141,7 +144,7 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
          String mediaPath = null;
          String filePath = null;
          String fileName = null;
@@ -21,10 +21,10 @@ index e517501..63a02c7 100644
              java.util.regex.Matcher autoM = java.util.regex.Pattern.compile(
                  "(/sdcard/Stryker/goose/[^\\s`'\"\\]]+?\\.(png|jpg|jpeg|gif))",
                  java.util.regex.Pattern.CASE_INSENSITIVE).matcher(displayText);
-@@ -216,6 +219,10 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
-         if (mediaPath != null) {
+@@ -227,6 +230,10 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
              final String fp = mediaPath;
              h.mediaView.setVisibility(View.VISIBLE);
+             h.mediaView.setTag(fp);
 +            h.mediaView.setClickable(true);
 +            h.mediaView.setOnClickListener(v -> {
 +                if (imageClickListener != null) imageClickListener.onImageClick(fp);
@@ -33,7 +33,7 @@ index e517501..63a02c7 100644
                  try {
                      android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-index ba45797..f8ae2ac 100644
+index ba45797..f2721ae 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 @@ -96,6 +96,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
@@ -44,7 +44,7 @@ index ba45797..f8ae2ac 100644
          LinearLayoutManager lm = new LinearLayoutManager(this);
          lm.setStackFromEnd(true);
          messagesView.setLayoutManager(lm);
-@@ -779,6 +780,22 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -779,6 +780,21 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
      }
  
      /** Open file with external app via Android chooser (e.g. MT Manager). */
@@ -56,7 +56,6 @@ index ba45797..f8ae2ac 100644
 +        wv.getSettings().setLoadWithOverviewMode(true);
 +        wv.getSettings().setUseWideViewPort(true);
 +        wv.getSettings().setAllowFileAccess(true);
-+        // Load langsung dari path asli (sdcard bisa diakses WebView)
 +        wv.loadUrl("file://" + path);
 +        wv.setOnLongClickListener(v -> { d.dismiss(); return true; });
 +        d.setContentView(wv);
