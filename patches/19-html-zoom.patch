@@ -1,0 +1,14 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GhostVizActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GhostVizActivity.java
+index ba18847..d85221c 100644
+--- a/app/src/main/java/com/zalexdev/stryker/goose/GhostVizActivity.java
++++ b/app/src/main/java/com/zalexdev/stryker/goose/GhostVizActivity.java
+@@ -44,6 +44,9 @@ public class GhostVizActivity extends AppCompatActivity {
+         ws.setDomStorageEnabled(true);
+         ws.setAllowFileAccess(true);
+         ws.setMediaPlaybackRequiresUserGesture(false);
++        ws.setBuiltInZoomControls(true);
++        ws.setDisplayZoomControls(false);
++        ws.setSupportZoom(true);
+         webView.setWebViewClient(new WebViewClient());
+ 
+         if (path != null) {

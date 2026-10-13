@@ -1,0 +1,61 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+index ba45797..5e35da2 100644
+--- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
++++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+@@ -60,6 +60,21 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+     // Pending text file content
+     private String pendingTextFile;
+     private String pendingFileName;
++    private String pendingUploadCopyPath;
++
++    private String copyUploadToGooseDir(String name, byte[] data) {
++        try {
++            java.io.File dir = new java.io.File("/sdcard/Stryker/goose/uploads");
++            if (!dir.exists()) dir.mkdirs();
++            String safe = name.replaceAll("[^a-zA-Z0-9._-]", "_");
++            if (safe.isEmpty()) safe = "file";
++            java.io.File outf = new java.io.File(dir, safe);
++            java.io.FileOutputStream fos = new java.io.FileOutputStream(outf);
++            fos.write(data);
++            fos.close();
++            return outf.getAbsolutePath();
++        } catch (Exception e) { return null; }
++    }
+ 
+     private int streamingPos = -1;
+     private final Map<String, Integer> toolPositions = new HashMap<>();
+@@ -308,6 +323,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+                         byte[] bytes = baos.toByteArray();
+                         pendingImageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
+                         pendingImageMime = "image/jpeg";
++                        pendingUploadCopyPath = copyUploadToGooseDir("image.jpg", bytes);
+                         pendingTextFile = null;
+                         pendingFileName = "image.jpg";
+                         ui(() -> {
+@@ -340,6 +356,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+                         } catch (Exception ignored) {}
+                         pendingTextFile = "File: " + name + "\n```\n" + content + "\n```\n";
+                         pendingFileName = name;
++                        pendingUploadCopyPath = copyUploadToGooseDir(name, baos.toByteArray());
+                         pendingImageBase64 = null;
+                         pendingImageMime = null;
+                         final String fName = name;
+@@ -401,6 +418,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+                 pendingImageMime = null;
+                 pendingTextFile = null;
+                 pendingFileName = null;
++                pendingUploadCopyPath = null;
+                 working = true;
+                 updateSendButton();
+                 final String fText = userText;
+@@ -438,7 +456,9 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+         // Display untuk chat (cuma nama file, jangan dump isi)
+         final String display;
+         if (fileName != null) {
+-            display = "📎 " + fileName + (userText.isEmpty() ? "" : "\n" + userText);
++            String dx = "📎 " + fileName + (userText.isEmpty() ? "" : "\n" + userText);
++            if (pendingUploadCopyPath != null) dx += "\n[file:" + pendingUploadCopyPath + "]";
++            display = dx;
+         } else if (img64 != null) {
+             display = (userText.isEmpty() ? "" : userText + " ") + "🖼 [image]";
+         } else {
