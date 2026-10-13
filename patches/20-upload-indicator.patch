@@ -1,5 +1,5 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-index ba45797..67c2b17 100644
+index ba45797..e2c5612 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 @@ -60,6 +60,21 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
@@ -24,15 +24,22 @@ index ba45797..67c2b17 100644
  
      private int streamingPos = -1;
      private final Map<String, Integer> toolPositions = new HashMap<>();
-@@ -308,6 +323,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -308,10 +323,12 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
                          byte[] bytes = baos.toByteArray();
                          pendingImageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
                          pendingImageMime = "image/jpeg";
-+                        pendingUploadCopyPath = copyUploadToGooseDir("image.jpg", bytes);
++                        String imgName = "image_" + System.currentTimeMillis() + ".jpg";
++                        pendingUploadCopyPath = copyUploadToGooseDir(imgName, bytes);
                          pendingTextFile = null;
-                         pendingFileName = "image.jpg";
+-                        pendingFileName = "image.jpg";
++                        pendingFileName = imgName;
                          ui(() -> {
-@@ -340,6 +356,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+-                            showAttachBar("image.jpg");
++                            showAttachBar(imgName);
+                             inputView.setHint("Ask about the image…");
+                         });
+                     } else {
+@@ -340,6 +357,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
                          } catch (Exception ignored) {}
                          pendingTextFile = "File: " + name + "\n```\n" + content + "\n```\n";
                          pendingFileName = name;
@@ -40,7 +47,7 @@ index ba45797..67c2b17 100644
                          pendingImageBase64 = null;
                          pendingImageMime = null;
                          final String fName = name;
-@@ -401,6 +418,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -401,6 +419,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
                  pendingImageMime = null;
                  pendingTextFile = null;
                  pendingFileName = null;
@@ -48,7 +55,7 @@ index ba45797..67c2b17 100644
                  working = true;
                  updateSendButton();
                  final String fText = userText;
-@@ -435,12 +453,19 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -435,12 +454,19 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
          if (textFile != null) {
              fullText = textFile + (userText.isEmpty() ? "" : "\n" + userText);
          }
