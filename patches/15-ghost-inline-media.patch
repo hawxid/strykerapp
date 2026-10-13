@@ -1,5 +1,5 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-index 54c4973..f5cecb9 100644
+index 54c4973..660b28c 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 @@ -18,12 +18,22 @@ import java.util.List;
@@ -50,25 +50,26 @@ index 54c4973..f5cecb9 100644
          }
      }
  
-@@ -88,6 +116,17 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -88,6 +116,18 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
  
          // Collapsible TOOL output: collapsed = first 5 lines + hint
          String displayText = m.text != null ? m.text : "";
-+        if (m.type == ChatMessage.Type.USER && displayText.contains("File: ") && displayText.contains("```")) {
-+            java.util.regex.Matcher fcm = java.util.regex.Pattern.compile(
-+                "File: (.+?)\n```\n[\s\S]*?\n```").matcher(displayText);
-+            if (fcm.find()) {
-+                String fname = fcm.group(1).trim();
++        if (m.type == ChatMessage.Type.USER && displayText.startsWith("File: ")) {
++            int nl = displayText.indexOf('\n');
++            if (nl > 6) {
++                String fname = displayText.substring(6, nl).trim();
 +                String safe = fname.replaceAll("[^a-zA-Z0-9._-]", "_");
 +                if (safe.isEmpty()) safe = "file";
 +                String upath = "/sdcard/Stryker/goose/uploads/" + safe;
 +                displayText = "\uD83D\uDCC4 " + fname + "\n[file:" + upath + "]";
 +            }
 +        }
++            }
++        }
          if (m.type == ChatMessage.Type.TOOL && !m.expanded) {
              String[] lines = displayText.split("\n");
              if (lines.length > 5) {
-@@ -100,6 +139,41 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -100,6 +140,41 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
                  displayText += "\n(tap to expand)";
              }
          }
@@ -110,7 +111,7 @@ index 54c4973..f5cecb9 100644
          h.bodyView.setText(displayText);
  
          boolean showTitle = m.title != null && !m.title.isEmpty();
-@@ -149,6 +223,33 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -149,6 +224,33 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
              h.bubble.setOnClickListener(h.expandClickListener);
              h.bodyView.setOnClickListener(h.expandClickListener);
          }
