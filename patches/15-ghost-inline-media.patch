@@ -1,5 +1,5 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-index 54c4973..e95afff 100644
+index 54c4973..fe363a4 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 @@ -18,12 +18,18 @@ import java.util.List;
@@ -62,7 +62,7 @@ index 54c4973..e95afff 100644
 +                try {
 +                    java.io.File f = new java.io.File(autoM.group(1));
 +                    String cp = f.getCanonicalPath();
-+                    if (cp.startsWith("/sdcard/Stryker/goose/") && f.isFile())
++                    if (cp.startsWith("/sdcard/Stryker/goose/"))
 +                        mediaPath = cp;
 +                } catch (Exception ignored) {}
 +            }
