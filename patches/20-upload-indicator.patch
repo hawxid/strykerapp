@@ -1,5 +1,5 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-index ba45797..5e35da2 100644
+index ba45797..8162f92 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 @@ -60,6 +60,21 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
@@ -48,7 +48,13 @@ index ba45797..5e35da2 100644
                  working = true;
                  updateSendButton();
                  final String fText = userText;
-@@ -438,7 +456,9 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -435,12 +453,18 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+         if (textFile != null) {
+             fullText = textFile + (userText.isEmpty() ? "" : "\n" + userText);
+         }
++        if (img64 != null && pendingUploadCopyPath != null) {
++            fullText = (fullText.isEmpty() ? "" : fullText + "\n") + "[file:" + pendingUploadCopyPath + "]";
++        }
          // Display untuk chat (cuma nama file, jangan dump isi)
          final String display;
          if (fileName != null) {
@@ -58,4 +64,7 @@ index ba45797..5e35da2 100644
 +            display = dx;
          } else if (img64 != null) {
              display = (userText.isEmpty() ? "" : userText + " ") + "🖼 [image]";
++            if (pendingUploadCopyPath != null) display += "\n[file:" + pendingUploadCopyPath + "]";
          } else {
+             display = userText;
+         }
