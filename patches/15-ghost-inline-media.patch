@@ -1,5 +1,5 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-index 54c4973..535c89d 100644
+index 54c4973..e95afff 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 @@ -18,12 +18,18 @@ import java.util.List;
@@ -46,7 +46,7 @@ index 54c4973..535c89d 100644
          }
      }
  
-@@ -100,6 +124,35 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -100,6 +124,47 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
                  displayText += "\n(tap to expand)";
              }
          }
@@ -54,6 +54,18 @@ index 54c4973..535c89d 100644
 +        String filePath = null;
 +        String fileName = null;
 +        if (m.type == ChatMessage.Type.AGENT) {
++            // Auto-detect: cari path /sdcard/Stryker/goose/*.png|jpg|gif di teks (tanpa marker)
++            java.util.regex.Matcher autoM = java.util.regex.Pattern.compile(
++                "(/sdcard/Stryker/goose/[^\\s`'\"\\]]+?\\.(png|jpg|jpeg|gif))",
++                java.util.regex.Pattern.CASE_INSENSITIVE).matcher(displayText);
++            if (autoM.find() && mediaPath == null) {
++                try {
++                    java.io.File f = new java.io.File(autoM.group(1));
++                    String cp = f.getCanonicalPath();
++                    if (cp.startsWith("/sdcard/Stryker/goose/") && f.isFile())
++                        mediaPath = cp;
++                } catch (Exception ignored) {}
++            }
 +            java.util.regex.Matcher im = java.util.regex.Pattern.compile("\\[img:(.+?)\\]").matcher(displayText);
 +            if (im.find()) {
 +                try {
@@ -82,7 +94,7 @@ index 54c4973..535c89d 100644
          h.bodyView.setText(displayText);
  
          boolean showTitle = m.title != null && !m.title.isEmpty();
-@@ -149,6 +202,33 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -149,6 +214,33 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
              h.bubble.setOnClickListener(h.expandClickListener);
              h.bodyView.setOnClickListener(h.expandClickListener);
          }
