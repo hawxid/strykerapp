@@ -1,14 +1,18 @@
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-index 54c4973..94ea0b2 100644
+index 54c4973..e517501 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
-@@ -18,12 +18,18 @@ import java.util.List;
+@@ -18,12 +18,22 @@ import java.util.List;
  /** RecyclerView adapter for goose chat messages. */
  public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
  
 +    public interface OnFileClickListener { void onFileClick(String path); }
 +    private OnFileClickListener fileClickListener;
 +    public void setOnFileClickListener(OnFileClickListener l) { fileClickListener = l; }
++
++    private static boolean isGoosePath(String cp) {
++        return cp.startsWith("/sdcard/Stryker/goose/") || cp.startsWith("/storage/emulated/0/Stryker/goose/");
++    }
 +
      private final List<ChatMessage> messages = new ArrayList<>();
  
@@ -21,7 +25,7 @@ index 54c4973..94ea0b2 100644
          View.OnClickListener expandClickListener;
  
          VH(@NonNull View itemView) {
-@@ -31,6 +37,24 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -31,6 +41,24 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
              bubble = itemView.findViewById(R.id.chat_bubble);
              titleView = itemView.findViewById(R.id.chat_title);
              bodyView = itemView.findViewById(R.id.chat_body);
@@ -46,7 +50,7 @@ index 54c4973..94ea0b2 100644
          }
      }
  
-@@ -100,6 +124,61 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -100,6 +128,41 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
                  displayText += "\n(tap to expand)";
              }
          }
@@ -54,31 +58,15 @@ index 54c4973..94ea0b2 100644
 +        String filePath = null;
 +        String fileName = null;
 +        if (m.type == ChatMessage.Type.AGENT) {
-+            // Auto-detect: cari path /sdcard/Stryker/goose/*.png|jpg|gif di teks (tanpa marker)
 +            java.util.regex.Matcher autoM = java.util.regex.Pattern.compile(
 +                "(/sdcard/Stryker/goose/[^\\s`'\"\\]]+?\\.(png|jpg|jpeg|gif))",
 +                java.util.regex.Pattern.CASE_INSENSITIVE).matcher(displayText);
-+            if (autoM.find() && mediaPath == null) {
++            if (autoM.find()) {
 +                try {
-+                    String rawP = autoM.group(1);
-+                    java.io.File dbg = new java.io.File("/sdcard/Stryker/goose/debug_inline.log");
-+                    java.io.FileWriter w = new java.io.FileWriter(dbg, true);
-+                    w.write("MATCH: " + rawP + "\n");
-+                    java.io.File f = new java.io.File(rawP);
++                    java.io.File f = new java.io.File(autoM.group(1));
 +                    String cp = f.getCanonicalPath();
-+                    w.write("CANON: " + cp + "\n");
-+                    w.write("EXISTS: " + f.exists() + "\n");
-+                    if (cp.startsWith("/sdcard/Stryker/goose/"))
-+                        mediaPath = cp;
-+                    w.write("MEDIAPATH: " + mediaPath + "\n");
-+                    w.close();
-+                } catch (Exception e) {
-+                    try {
-+                        java.io.FileWriter w2 = new java.io.FileWriter("/sdcard/Stryker/goose/debug_inline.log", true);
-+                        w2.write("ERROR: " + e.getMessage() + "\n");
-+                        w2.close();
-+                    } catch (Exception ignored2) {}
-+                }
++                    if (isGoosePath(cp)) mediaPath = cp;
++                } catch (Exception ignored) {}
 +            }
 +            java.util.regex.Matcher im = java.util.regex.Pattern.compile("\\[img:(.+?)\\]").matcher(displayText);
 +            if (im.find()) {
@@ -86,8 +74,7 @@ index 54c4973..94ea0b2 100644
 +                    java.io.File f = new java.io.File(im.group(1).trim());
 +                    String cp = f.getCanonicalPath();
 +                    String l = cp.toLowerCase();
-+                    if (cp.startsWith("/sdcard/Stryker/goose/") && f.isFile()
-+                        && (l.endsWith(".png") || l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".gif")))
++                    if (isGoosePath(cp) && (l.endsWith(".png") || l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".gif")))
 +                        mediaPath = cp;
 +                } catch (Exception ignored) {}
 +                displayText = im.replaceAll("").trim();
@@ -97,10 +84,7 @@ index 54c4973..94ea0b2 100644
 +                try {
 +                    java.io.File f = new java.io.File(fm.group(1).trim());
 +                    String cp = f.getCanonicalPath();
-+                    if (cp.startsWith("/sdcard/Stryker/goose/") && f.isFile()) {
-+                        filePath = cp;
-+                        fileName = f.getName();
-+                    }
++                    if (isGoosePath(cp)) { filePath = cp; fileName = f.getName(); }
 +                } catch (Exception ignored) {}
 +                displayText = fm.replaceAll("").trim();
 +            }
@@ -108,7 +92,7 @@ index 54c4973..94ea0b2 100644
          h.bodyView.setText(displayText);
  
          boolean showTitle = m.title != null && !m.title.isEmpty();
-@@ -149,6 +228,38 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+@@ -149,6 +212,33 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
              h.bubble.setOnClickListener(h.expandClickListener);
              h.bodyView.setOnClickListener(h.expandClickListener);
          }
@@ -121,11 +105,6 @@ index 54c4973..94ea0b2 100644
 +                    android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
 +                    o.inSampleSize = 2;
 +                    final android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeFile(fp, o);
-+                    try {
-+                        java.io.FileWriter w3 = new java.io.FileWriter("/sdcard/Stryker/goose/debug_inline.log", true);
-+                        w3.write("BITMAP: " + (b != null ? b.getWidth() + "x" + b.getHeight() : "NULL") + " for " + fp + "\n");
-+                        w3.close();
-+                    } catch (Exception ignored3) {}
 +                    h.mediaView.post(() -> {
 +                        if (b != null) h.mediaView.setImageBitmap(b);
 +                        else h.mediaView.setVisibility(View.GONE);
@@ -148,7 +127,7 @@ index 54c4973..94ea0b2 100644
  
      /** Mark all running tools as done (update title from ● running to ✓ done). */
 diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
-index 9788f67..ac62388 100644
+index 9788f67..ba45797 100644
 --- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 +++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
 @@ -95,6 +95,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
@@ -159,21 +138,18 @@ index 9788f67..ac62388 100644
          LinearLayoutManager lm = new LinearLayoutManager(this);
          lm.setStackFromEnd(true);
          messagesView.setLayoutManager(lm);
-@@ -778,6 +779,19 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+@@ -778,6 +779,16 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
      }
  
      /** Open file with external app via Android chooser (e.g. MT Manager). */
 +    private void openGhostFile(File file) {
 +        String n = file.getName().toLowerCase();
 +        if (n.endsWith(".html") || n.endsWith(".htm")) {
-+            android.content.Intent i = new android.content.Intent(
-+                    this, GhostVizActivity.class);
++            android.content.Intent i = new android.content.Intent(this, GhostVizActivity.class);
 +            i.putExtra(GhostVizActivity.EXTRA_PATH, file.getAbsolutePath());
 +            i.putExtra(GhostVizActivity.EXTRA_TITLE, file.getName());
 +            startActivity(i);
-+        } else {
-+            openWith(file);
-+        }
++        } else openWith(file);
 +    }
 +
      private void openWith(File file) {
