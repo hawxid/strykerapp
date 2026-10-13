@@ -1,0 +1,83 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
+index e517501..63a02c7 100644
+--- a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
++++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
+@@ -19,6 +19,9 @@ import java.util.List;
+ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+ 
+     public interface OnFileClickListener { void onFileClick(String path); }
++    public interface OnImageClickListener { void onImageClick(String path); }
++    private OnImageClickListener imageClickListener;
++    public void setOnImageClickListener(OnImageClickListener l) { imageClickListener = l; }
+     private OnFileClickListener fileClickListener;
+     public void setOnFileClickListener(OnFileClickListener l) { fileClickListener = l; }
+ 
+@@ -131,7 +134,7 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+         String mediaPath = null;
+         String filePath = null;
+         String fileName = null;
+-        if (m.type == ChatMessage.Type.AGENT) {
++        if (m.type == ChatMessage.Type.AGENT || m.type == ChatMessage.Type.USER) {
+             java.util.regex.Matcher autoM = java.util.regex.Pattern.compile(
+                 "(/sdcard/Stryker/goose/[^\\s`'\"\\]]+?\\.(png|jpg|jpeg|gif))",
+                 java.util.regex.Pattern.CASE_INSENSITIVE).matcher(displayText);
+@@ -216,6 +219,10 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+         if (mediaPath != null) {
+             final String fp = mediaPath;
+             h.mediaView.setVisibility(View.VISIBLE);
++            h.mediaView.setClickable(true);
++            h.mediaView.setOnClickListener(v -> {
++                if (imageClickListener != null) imageClickListener.onImageClick(fp);
++            });
+             new Thread(() -> {
+                 try {
+                     android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+index ba45797..de5e054 100644
+--- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
++++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+@@ -96,6 +96,7 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+ 
+         adapter = new ChatAdapter();
+         adapter.setOnFileClickListener(p -> openGhostFile(new java.io.File(p)));
++        adapter.setOnImageClickListener(p -> showFullscreenImage(p));
+         LinearLayoutManager lm = new LinearLayoutManager(this);
+         lm.setStackFromEnd(true);
+         messagesView.setLayoutManager(lm);
+@@ -779,6 +780,36 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+     }
+ 
+     /** Open file with external app via Android chooser (e.g. MT Manager). */
++    private void showFullscreenImage(String path) {
++        android.app.Dialog d = new android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
++        android.webkit.WebView wv = new android.webkit.WebView(this);
++        wv.getSettings().setBuiltInZoomControls(true);
++        wv.getSettings().setDisplayZoomControls(false);
++        wv.getSettings().setLoadWithOverviewMode(true);
++        wv.getSettings().setUseWideViewPort(true);
++        try {
++            java.io.File f = new java.io.File(path);
++            android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(
++                this, getPackageName() + ".provider", f);
++            // Copy ke cache biar WebView bisa akses via file:///
++            java.io.File cacheFile = new java.io.File(getCacheDir(), f.getName());
++            java.io.InputStream in = getContentResolver().openInputStream(uri);
++            java.io.OutputStream out = new java.io.FileOutputStream(cacheFile);
++            byte[] buf = new byte[8192];
++            int len;
++            while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
++            in.close(); out.close();
++            wv.loadUrl("file://" + cacheFile.getAbsolutePath());
++        } catch (Exception e) {
++            android.widget.Toast.makeText(this, "Cannot open image", android.widget.Toast.LENGTH_SHORT).show();
++            return;
++        }
++        wv.setOnLongClickListener(v -> { d.dismiss(); return true; });
++        d.setContentView(wv);
++        d.show();
++        android.widget.Toast.makeText(this, "Pinch to zoom, long-press to close", android.widget.Toast.LENGTH_SHORT).show();
++    }
++
+     private void openGhostFile(File file) {
+         String n = file.getName().toLowerCase();
+         if (n.endsWith(".html") || n.endsWith(".htm")) {
