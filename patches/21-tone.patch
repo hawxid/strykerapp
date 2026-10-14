@@ -25,7 +25,7 @@ index 7c54686..dd2d0af 100644
  
      <FrameLayout
 diff --git a/app/src/main/res/values-night/colors.xml b/app/src/main/res/values-night/colors.xml
-index 990aee0..b4911f7 100644
+index 990aee0..e3da513 100644
 --- a/app/src/main/res/values-night/colors.xml
 +++ b/app/src/main/res/values-night/colors.xml
 @@ -1,6 +1,6 @@
@@ -84,6 +84,6 @@ index 990aee0..b4911f7 100644
 +    <color name="cyber_magenta">#FF2D78</color>
 +    <color name="cyber_violet">#A088F0</color>
 +    <color name="cyber_green">#7EE787</color>
-+    <color name="cyber_border">#1E3A4A</color>
++    <color name="cyber_border">#00E5FF</color>
  </resources>
 \ No newline at end of file
