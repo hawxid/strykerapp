@@ -1,5 +1,5 @@
 diff --git a/app/src/main/res/values-night/colors.xml b/app/src/main/res/values-night/colors.xml
-index 990aee0..d7cdbd0 100644
+index 990aee0..3ef5d0a 100644
 --- a/app/src/main/res/values-night/colors.xml
 +++ b/app/src/main/res/values-night/colors.xml
 @@ -1,6 +1,6 @@
@@ -15,7 +15,7 @@ index 990aee0..d7cdbd0 100644
      <color name="intro_line_3">#FFFFFF</color>
  
 -    <color name="light_contrast">#121212</color>
-+    <color name="light_contrast">#0D1220</color>
++    <color name="light_contrast">#0F0F14</color>
      <color name="night_contrast">#FFFFFF</color>
      <color name="night_contrast_2">#D9FFFFFF</color>
 -    <color name="light_lite_contrast">#303030</color>
