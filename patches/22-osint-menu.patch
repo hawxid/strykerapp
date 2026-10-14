@@ -1,0 +1,484 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/MainActivity.java b/app/src/main/java/com/zalexdev/stryker/MainActivity.java
+index 56a0eaf..c0bf41e 100644
+--- a/app/src/main/java/com/zalexdev/stryker/MainActivity.java
++++ b/app/src/main/java/com/zalexdev/stryker/MainActivity.java
+@@ -58,6 +58,7 @@ import com.zalexdev.stryker.vnc.VNCFragment;
+ import com.zalexdev.stryker.wifi.Wifi;
+ import com.zalexdev.stryker.wpair.WpairFragment;
+ import com.zalexdev.stryker.bluetooth.BluetoothFragment;
++import com.zalexdev.stryker.osint.OsintFragment;
+ 
+ import java.io.File;
+ import java.io.FileOutputStream;
+@@ -93,7 +94,7 @@ public class MainActivity extends AppCompatActivity {
+             R.id.hid_item, R.id.usb_arsenal_item, R.id.macchanger_item));
+     private static final java.util.Set<Integer> VM_INDEPENDENT_IDS = new java.util.HashSet<>(java.util.Arrays.asList(
+             R.id.dasboard_item, R.id.logs_item, R.id.about_item,
+-            R.id.wpair_item, R.id.bt_item, R.id.geomac_item,
++            R.id.wpair_item, R.id.bt_item, R.id.osint_item, R.id.geomac_item,
+             R.id.wordlists_item));
+     private MetasploitUtils metasploitUtils;
+     private ArrayList<WiFINetwork> networks;
+@@ -858,6 +859,7 @@ public class MainActivity extends AppCompatActivity {
+             if (itemId == R.id.nmap_item) return new NmapScanner();
+             if (itemId == R.id.wpair_item) return new WpairFragment();
+             if (itemId == R.id.bt_item) return new BluetoothFragment();
++            if (itemId == R.id.osint_item) return new OsintFragment();
+             if (itemId == R.id.about_item) return new AboutFragment();
+             if (itemId == R.id.logs_item) return new com.zalexdev.stryker.logger.LoggerFragment();
+             if (itemId == R.id.vnc_item) return new VNCFragment();
+@@ -907,6 +909,7 @@ public class MainActivity extends AppCompatActivity {
+         m.put(R.id.macchanger_item,   new DrawerSpec("MAC changer",      R.drawable.password,    0xFF1565C0));
+         m.put(R.id.wpair_item,        new DrawerSpec("WhisperPair (BLE)", R.drawable.wpair,      0xFF3949AB));
+         m.put(R.id.bt_item,           new DrawerSpec("Bluetooth", R.drawable.wpair, 0xFF3949AB));
++        m.put(R.id.osint_item,         new DrawerSpec("OSINT Recon",       R.drawable.scanner,    0xFF00E5FF));
+         m.put(R.id.lan_item,          new DrawerSpec("Local network",    R.drawable.lan,         0xFFAB47BC));
+         m.put(R.id.nmap_item,         new DrawerSpec("Nmap",             R.drawable.scanner,     0xFFAB47BC));
+         m.put(R.id.nuclei_item,       new DrawerSpec("Web scanner",      R.drawable.webscan,     0xFF3949AB));
+diff --git a/app/src/main/java/com/zalexdev/stryker/osint/OsintCategoryAdapter.java b/app/src/main/java/com/zalexdev/stryker/osint/OsintCategoryAdapter.java
+new file mode 100644
+index 0000000..a5e58a0
+--- /dev/null
++++ b/app/src/main/java/com/zalexdev/stryker/osint/OsintCategoryAdapter.java
+@@ -0,0 +1,66 @@
++package com.zalexdev.stryker.osint;
++
++import android.view.LayoutInflater;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.TextView;
++import androidx.annotation.NonNull;
++import androidx.recyclerview.widget.RecyclerView;
++import com.google.android.material.dialog.MaterialAlertDialogBuilder;
++import com.zalexdev.stryker.R;
++import java.util.List;
++
++public class OsintCategoryAdapter extends RecyclerView.Adapter<OsintCategoryAdapter.VH> {
++    public interface OnToolTap { void onTap(OsintFragment.OsintTool tool); }
++    private final List<OsintFragment.OsintCategory> cats;
++    private final OnToolTap listener;
++
++    public OsintCategoryAdapter(List<OsintFragment.OsintCategory> cats, OnToolTap listener) {
++        this.cats = cats; this.listener = listener;
++    }
++
++    static class VH extends RecyclerView.ViewHolder {
++        TextView icon, title, desc, toolList;
++        VH(View v) {
++            super(v);
++            icon = v.findViewById(R.id.osint_cat_icon);
++            title = v.findViewById(R.id.osint_cat_title);
++            desc = v.findViewById(R.id.osint_cat_desc);
++            toolList = v.findViewById(R.id.osint_cat_tools);
++        }
++    }
++
++    @NonNull
++    @Override
++    public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
++        View v = LayoutInflater.from(parent.getContext())
++            .inflate(R.layout.osint_category_row, parent, false);
++        return new VH(v);
++    }
++
++    @Override
++    public void onBindViewHolder(@NonNull VH h, int pos) {
++        OsintFragment.OsintCategory c = cats.get(pos);
++        h.icon.setText(c.icon);
++        h.title.setText(c.title);
++        h.desc.setText(c.desc);
++        StringBuilder sb = new StringBuilder();
++        for (int i = 0; i < c.tools.size(); i++) {
++            if (i > 0) sb.append("   ");
++            sb.append("▸ ").append(c.tools.get(i).name);
++        }
++        h.toolList.setText(sb.toString());
++        h.itemView.setOnClickListener(v -> {
++            String[] names = new String[c.tools.size()];
++            for (int i = 0; i < c.tools.size(); i++)
++                names[i] = c.tools.get(i).name;
++            new MaterialAlertDialogBuilder(v.getContext())
++                .setTitle(c.icon + " " + c.title)
++                .setItems(names, (d, w) -> listener.onTap(c.tools.get(w)))
++                .show();
++        });
++    }
++
++    @Override
++    public int getItemCount() { return cats.size(); }
++}
+diff --git a/app/src/main/java/com/zalexdev/stryker/osint/OsintFragment.java b/app/src/main/java/com/zalexdev/stryker/osint/OsintFragment.java
+new file mode 100644
+index 0000000..bfdb12d
+--- /dev/null
++++ b/app/src/main/java/com/zalexdev/stryker/osint/OsintFragment.java
+@@ -0,0 +1,173 @@
++package com.zalexdev.stryker.osint;
++
++import android.os.Bundle;
++import android.view.LayoutInflater;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.TextView;
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++import androidx.fragment.app.Fragment;
++import androidx.recyclerview.widget.LinearLayoutManager;
++import androidx.recyclerview.widget.RecyclerView;
++import com.google.android.material.dialog.MaterialAlertDialogBuilder;
++import com.zalexdev.stryker.R;
++import com.zalexdev.stryker.utils.Core;
++import java.util.ArrayList;
++import java.util.List;
++
++public class OsintFragment extends Fragment {
++    private Core core;
++    private TextView output;
++    private TextView statusText;
++    private android.widget.ProgressBar progressBar;
++    private RecyclerView categoryList;
++    private OsintCategoryAdapter adapter;
++    private List<OsintCategory> categories = new ArrayList<>();
++
++    public static class OsintTool {
++        String name, desc, inputHint, cmdTemplate;
++        OsintTool(String name, String desc, String inputHint, String cmdTemplate) {
++            this.name = name; this.desc = desc;
++            this.inputHint = inputHint; this.cmdTemplate = cmdTemplate;
++        }
++    }
++
++    public static class OsintCategory {
++        String icon, title, desc;
++        List<OsintTool> tools;
++        OsintCategory(String icon, String title, String desc, List<OsintTool> tools) {
++            this.icon = icon; this.title = title; this.desc = desc; this.tools = tools;
++        }
++    }
++
++    @Nullable
++    @Override
++    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
++        View v = inflater.inflate(R.layout.fragment_osint, container, false);
++        core = new Core(requireContext());
++        output = v.findViewById(R.id.osint_output);
++        statusText = v.findViewById(R.id.osint_status);
++        progressBar = v.findViewById(R.id.osint_progress);
++        categoryList = v.findViewById(R.id.osint_category_list);
++        categoryList.setLayoutManager(new LinearLayoutManager(requireContext()));
++
++        buildCategories();
++        adapter = new OsintCategoryAdapter(categories, this::onToolTap);
++        categoryList.setAdapter(adapter);
++        setIdle();
++        return v;
++    }
++
++    private void buildCategories() {
++        List<OsintTool> emailTools = new ArrayList<>();
++        emailTools.add(new OsintTool("theHarvester",
++            "Email, subdomain & nama dari sumber publik",
++            "domain (contoh: example.com)",
++            "/theHarvester/.venv/bin/theHarvester -d {input} -b crtsh -l 50"));
++        emailTools.add(new OsintTool("holehe",
++            "Cek email terdaftar di 120+ situs",
++            "email (contoh: test@example.com)",
++            "holehe {input}"));
++        categories.add(new OsintCategory("📧", "EMAIL INTEL",
++            "Harvest email & cek keberadaan akun", emailTools));
++
++        List<OsintTool> userTools = new ArrayList<>();
++        userTools.add(new OsintTool("sherlock",
++            "Cari username di ratusan situs & sosmed",
++            "username (contoh: johndoe)",
++            "sherlock {input} --timeout 10"));
++        categories.add(new OsintCategory("👤", "USERNAME",
++            "Lacak jejak username di internet", userTools));
++
++        List<OsintTool> phoneTools = new ArrayList<>();
++        phoneTools.add(new OsintTool("phoneinfoga",
++            "Intel nomor HP: carrier, lokasi, VOIP",
++            "nomor (contoh: +6281234567890)",
++            "phoneinfoga scan -n {input}"));
++        categories.add(new OsintCategory("📱", "PHONE INTEL",
++            "Analisis nomor telepon", phoneTools));
++
++        List<OsintTool> subTools = new ArrayList<>();
++        subTools.add(new OsintTool("subfinder",
++            "Enumerasi subdomain pasif super cepat",
++            "domain (contoh: example.com)",
++            "subfinder -d {input} -silent"));
++        categories.add(new OsintCategory("🌐", "SUBDOMAIN",
++            "Petakan attack surface domain", subTools));
++
++        List<OsintTool> ipTools = new ArrayList<>();
++        ipTools.add(new OsintTool("whois",
++            "Info registrasi IP: ASN, org, negara",
++            "IP (contoh: 8.8.8.8)",
++            "whois {input}"));
++        ipTools.add(new OsintTool("dig",
++            "Reverse DNS lookup",
++            "IP (contoh: 8.8.8.8)",
++            "dig -x {input} +short"));
++        categories.add(new OsintCategory("🔍", "IP INTEL",
++            "Investigasi alamat IP", ipTools));
++    }
++
++    private void onToolTap(OsintTool tool) {
++        final android.widget.EditText input = new android.widget.EditText(requireContext());
++        input.setHint(tool.inputHint);
++        input.setSingleLine(true);
++        new MaterialAlertDialogBuilder(requireContext())
++            .setTitle("⚡ " + tool.name)
++            .setMessage(tool.desc)
++            .setView(input)
++            .setPositiveButton("RUN", (dlg, w) -> {
++                String target = input.getText().toString().trim();
++                if (target.isEmpty()) return;
++                String cmd = tool.cmdTemplate.replace("{input}", target);
++                runCmd(tool.name, cmd);
++            })
++            .setNegativeButton("Batal", null)
++            .show();
++    }
++
++    private void setIdle() {
++        progressBar.setVisibility(View.GONE);
++        statusText.setText("● IDLE — pilih tool di atas");
++        statusText.setTextColor(0xFF8890A0);
++    }
++
++    private void setRunning(String toolName) {
++        progressBar.setVisibility(View.VISIBLE);
++        statusText.setText("◉ RUNNING: " + toolName + "...");
++        statusText.setTextColor(0xFF7EE787);
++        output.setText("$ ...\n");
++    }
++
++    private void setDone(String toolName) {
++        progressBar.setVisibility(View.GONE);
++        statusText.setText("✓ DONE: " + toolName);
++        statusText.setTextColor(0xFF48B050);
++    }
++
++    private void runCmd(String toolName, String cmd) {
++        setRunning(toolName);
++        output.setText("$ " + cmd + "\n");
++        new Thread(() -> {
++            try {
++                ArrayList<String> out = core.customChrootCommand(cmd, true);
++                StringBuilder sb = new StringBuilder("$ " + cmd + "\n");
++                sb.append("────────────────────────────────\n");
++                for (String l : out) sb.append(l).append("\n");
++                String result = sb.toString();
++                requireActivity().runOnUiThread(() -> {
++                    output.setText(result);
++                    setDone(toolName);
++                });
++            } catch (Exception e) {
++                requireActivity().runOnUiThread(() -> {
++                    output.setText("✗ Error: " + e.getMessage());
++                    progressBar.setVisibility(View.GONE);
++                    statusText.setText("✗ ERROR");
++                    statusText.setTextColor(0xFFE84040);
++                });
++            }
++        }, "osint-cmd").start();
++    }
++}
+diff --git a/app/src/main/res/layout/drawer_content.xml b/app/src/main/res/layout/drawer_content.xml
+index b926810..fc99559 100644
+--- a/app/src/main/res/layout/drawer_content.xml
++++ b/app/src/main/res/layout/drawer_content.xml
+@@ -182,6 +182,10 @@
+             android:id="@+id/bt_item"
+             layout="@layout/drawer_row" />
+ 
++<include
++            android:id="@+id/osint_item"
++            layout="@layout/drawer_row" />
++
+         <com.google.android.material.textview.MaterialTextView
+             android:layout_width="wrap_content"
+             android:layout_height="wrap_content"
+diff --git a/app/src/main/res/layout/fragment_osint.xml b/app/src/main/res/layout/fragment_osint.xml
+new file mode 100644
+index 0000000..8bd8772
+--- /dev/null
++++ b/app/src/main/res/layout/fragment_osint.xml
+@@ -0,0 +1,94 @@
++<?xml version="1.0" encoding="utf-8"?>
++<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent"
++    android:background="#0D1117"
++    android:padding="16dp">
++    <LinearLayout
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:orientation="vertical">
++
++        <TextView
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:text="◤ OSINT RECON ◥"
++            android:textColor="#00E5FF"
++            android:textSize="22sp"
++            android:textStyle="bold"
++            android:fontFamily="monospace"
++            android:letterSpacing="0.1" />
++        <TextView
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:layout_marginTop="4dp"
++            android:text="// pilih kategori → pilih tool → input target → RUN"
++            android:textColor="#8890A0"
++            android:textSize="11sp"
++            android:fontFamily="monospace" />
++
++        <LinearLayout
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:layout_marginTop="16dp"
++            android:orientation="horizontal"
++            android:gravity="center_vertical"
++            android:background="#1A2230"
++            android:padding="10dp">
++            <ProgressBar
++                android:id="@+id/osint_progress"
++                android:layout_width="24dp"
++                android:layout_height="24dp"
++                android:layout_marginEnd="10dp"
++                android:visibility="gone" />
++            <TextView
++                android:id="@+id/osint_status"
++                android:layout_width="wrap_content"
++                android:layout_height="wrap_content"
++                android:text="● IDLE"
++                android:textColor="#8890A0"
++                android:textSize="12sp"
++                android:fontFamily="monospace"
++                android:textStyle="bold" />
++        </LinearLayout>
++
++        <TextView
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:layout_marginTop="16dp"
++            android:text="── TARGET CATEGORIES ──"
++            android:textColor="#A088F0"
++            android:textSize="12sp"
++            android:fontFamily="monospace"
++            android:textStyle="bold" />
++        <androidx.recyclerview.widget.RecyclerView
++            android:id="@+id/osint_category_list"
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:layout_marginTop="8dp"
++            android:nestedScrollingEnabled="false" />
++
++        <TextView
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:layout_marginTop="16dp"
++            android:text="── LIVE OUTPUT ──"
++            android:textColor="#A088F0"
++            android:textSize="12sp"
++            android:fontFamily="monospace"
++            android:textStyle="bold" />
++        <TextView
++            android:id="@+id/osint_output"
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:layout_marginTop="8dp"
++            android:minHeight="200dp"
++            android:background="#0A0E16"
++            android:padding="12dp"
++            android:text="// output muncul di sini..."
++            android:textColor="#7EE787"
++            android:textSize="11sp"
++            android:fontFamily="monospace"
++            android:textIsSelectable="true" />
++    </LinearLayout>
++</ScrollView>
+diff --git a/app/src/main/res/layout/osint_category_row.xml b/app/src/main/res/layout/osint_category_row.xml
+new file mode 100644
+index 0000000..839c2b6
+--- /dev/null
++++ b/app/src/main/res/layout/osint_category_row.xml
+@@ -0,0 +1,75 @@
++<?xml version="1.0" encoding="utf-8"?>
++<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    android:layout_width="match_parent"
++    android:layout_height="wrap_content"
++    android:layout_marginBottom="10dp"
++    app:cardBackgroundColor="#1A2230"
++    app:cardCornerRadius="8dp"
++    app:cardElevation="0dp"
++    app:strokeColor="#30363D"
++    app:strokeWidth="1dp">
++
++    <LinearLayout
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:orientation="horizontal"
++        android:padding="14dp"
++        android:gravity="center_vertical">
++
++        <TextView
++            android:id="@+id/osint_cat_icon"
++            android:layout_width="48dp"
++            android:layout_height="48dp"
++            android:gravity="center"
++            android:text="📧"
++            android:textSize="28sp"
++            android:background="#0A0E16" />
++
++        <LinearLayout
++            android:layout_width="0dp"
++            android:layout_height="wrap_content"
++            android:layout_weight="1"
++            android:layout_marginStart="12dp"
++            android:orientation="vertical">
++
++            <TextView
++                android:id="@+id/osint_cat_title"
++                android:layout_width="wrap_content"
++                android:layout_height="wrap_content"
++                android:text="EMAIL INTEL"
++                android:textColor="#00E5FF"
++                android:textSize="14sp"
++                android:textStyle="bold"
++                android:fontFamily="monospace"
++                android:letterSpacing="0.05" />
++
++            <TextView
++                android:id="@+id/osint_cat_desc"
++                android:layout_width="wrap_content"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="2dp"
++                android:text="desc"
++                android:textColor="#8890A0"
++                android:textSize="11sp" />
++
++            <TextView
++                android:id="@+id/osint_cat_tools"
++                android:layout_width="wrap_content"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="6dp"
++                android:text="▸ tool1"
++                android:textColor="#7EE787"
++                android:textSize="11sp"
++                android:fontFamily="monospace" />
++        </LinearLayout>
++
++        <TextView
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:text="❯"
++            android:textColor="#A088F0"
++            android:textSize="20sp"
++            android:textStyle="bold" />
++    </LinearLayout>
++</androidx.cardview.widget.CardView>
