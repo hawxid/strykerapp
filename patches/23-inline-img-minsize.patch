@@ -1,0 +1,13 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
+index f7022a0..9e01b7e 100644
+--- a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
++++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
+@@ -53,6 +53,8 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+             mlp.topMargin = 8;
+             mediaView.setLayoutParams(mlp);
+             mediaView.setMinimumHeight(200);
++            mediaView.setMinimumWidth(200);
++            mediaView.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+             bubble.addView(mediaView);
+             fileCard = new android.widget.Button(itemView.getContext());
+             fileCard.setVisibility(View.GONE);
