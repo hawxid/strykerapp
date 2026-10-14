@@ -1,5 +1,5 @@
 diff --git a/app/src/main/res/values-night/colors.xml b/app/src/main/res/values-night/colors.xml
-index 990aee0..24c819d 100644
+index 990aee0..ca5389d 100644
 --- a/app/src/main/res/values-night/colors.xml
 +++ b/app/src/main/res/values-night/colors.xml
 @@ -1,6 +1,6 @@
@@ -15,11 +15,11 @@ index 990aee0..24c819d 100644
      <color name="intro_line_3">#FFFFFF</color>
  
 -    <color name="light_contrast">#121212</color>
-+    <color name="light_contrast">#101622</color>
++    <color name="light_contrast">#000000</color>
      <color name="night_contrast">#FFFFFF</color>
      <color name="night_contrast_2">#D9FFFFFF</color>
 -    <color name="light_lite_contrast">#303030</color>
-+    <color name="light_lite_contrast">#232B45</color>
++    <color name="light_lite_contrast">#1A2230</color>
      <color name="grey">#BCBCBC</color>
 -    <color name="local_circle">#353535</color>
 +    <color name="local_circle">#1A2230</color>
@@ -29,8 +29,8 @@ index 990aee0..24c819d 100644
 -    <color name="toolbar_color">#2d2d2d</color>
 -    <color name="toolbar_darkness_color">#1e1e1e</color>
 +    <color name="itemcolor">#1A2230</color>
-+    <color name="toolbar_color">#101622</color>
-+    <color name="toolbar_darkness_color">#0A0E16</color>
++    <color name="toolbar_color">#000000</color>
++    <color name="toolbar_darkness_color">#000000</color>
  
      <color name="accent_wifi">#42A5F5</color>
      <color name="accent_local">#CE93D8</color>
