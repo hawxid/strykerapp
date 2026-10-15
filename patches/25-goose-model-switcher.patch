@@ -1,0 +1,252 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+index 684e4a4..badb0db 100644
+--- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
++++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+@@ -96,6 +96,10 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+                 showFilesDialog();
+                 return true;
+             }
++            if (item.getItemId() == R.id.goose_menu_model) {
++                showProfileDialog();
++                return true;
++            }
+             return false;
+         });
+ 
+@@ -830,7 +834,221 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+     // Guard biar history cuma di-load sekali per sesi (bukan per activity)
+     // TODO: rollback - guard dihapus, balik ke versi simple
+ 
+-    private void showFilesDialog() {
++    
++    private static final String GOOSE_PROFILE_DIR = "/sdcard/Stryker/goose/profile/";
++
++    /** Load profiles from /sdcard/Stryker/goose/profile/*.json */
++    private java.util.List<String[]> loadProfiles() {
++        java.util.List<String[]> out = new java.util.ArrayList<>();
++        try {
++            java.io.File dir = new java.io.File(GOOSE_PROFILE_DIR);
++            if (!dir.exists()) dir.mkdirs();
++            java.io.File[] files = dir.listFiles((d, n) -> n.endsWith(".json"));
++            if (files != null) {
++                java.util.Arrays.sort(files, (a, b) -> a.getName().compareTo(b.getName()));
++                for (java.io.File f : files) {
++                    try {
++                        String t = new String(java.nio.file.Files.readAllBytes(f.toPath()));
++                        String name = extractJson(t, "name");
++                        String provider = extractJson(t, "provider");
++                        String model = extractJson(t, "model");
++                        if (name.isEmpty()) name = f.getName().replace(".json", "");
++                        if (!provider.isEmpty() && !model.isEmpty())
++                            out.add(new String[]{name, provider, model});
++                    } catch (Exception ignored) {}
++                }
++            }
++        } catch (Exception ignored) {}
++        return out;
++    }
++
++    private String extractJson(String json, String key) {
++        try {
++            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
++                "\"" + key + "\"\s*:\s*\"([^\"]+)\"").matcher(json);
++            if (m.find()) return m.group(1);
++        } catch (Exception ignored) {}
++        return "";
++    }
++
++    /** Save a profile JSON to the profile dir. */
++    private boolean saveProfileFile(String name, String provider, String model) {
++        try {
++            java.io.File dir = new java.io.File(GOOSE_PROFILE_DIR);
++            if (!dir.exists()) dir.mkdirs();
++            String safe = name.replaceAll("[^a-zA-Z0-9._-]", "_");
++            if (safe.isEmpty()) return false;
++            String json = "{\"name\": \"" + name.replace("\"", "") + "\", "
++                + "\"provider\": \"" + provider.replace("\"", "") + "\", "
++                + "\"model\": \"" + model.replace("\"", "") + "\"}";
++            java.io.FileWriter w = new java.io.FileWriter(new java.io.File(dir, safe + ".json"));
++            w.write(json);
++            w.close();
++            return true;
++        } catch (Exception e) { return false; }
++    }
++
++    /** Profile-based model switcher: profile (provider+model) + reasoning level. */
++    private void showProfileDialog() {
++        new Thread(() -> {
++            final java.util.List<String[]> profiles = loadProfiles();
++            String curEffort = "medium";
++            try {
++                com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(this);
++                java.util.ArrayList<String> out = core.customChrootCommand(
++                    "grep -m1 '^GOOSE_THINKING_EFFORT:' /root/.config/goose/config.yaml 2>/dev/null", true);
++                for (String l : out) {
++                    if (l.contains(":")) curEffort = l.split(":", 2)[1].trim();
++                }
++            } catch (Exception ignored) {}
++            final String fEffort = curEffort;
++
++            runOnUiThread(() -> {
++                android.widget.LinearLayout layout = new android.widget.LinearLayout(this);
++                layout.setOrientation(android.widget.LinearLayout.VERTICAL);
++                int pad = (int) (16 * getResources().getDisplayMetrics().density);
++                layout.setPadding(pad, pad, pad, pad);
++
++                // Profile spinner
++                android.widget.TextView pl = new android.widget.TextView(this);
++                pl.setText("Profile");
++                pl.setTextSize(16);
++                layout.addView(pl);
++
++                java.util.List<String> names = new java.util.ArrayList<>();
++                for (String[] pr : profiles) names.add(pr[0] + "  (" + pr[1] + " / " + pr[2] + ")");
++                if (names.isEmpty()) names.add("(no profiles yet — tap + to add)");
++
++                android.widget.Spinner pSpin = new android.widget.Spinner(this);
++                android.widget.ArrayAdapter<String> pAd = new android.widget.ArrayAdapter<>(this,
++                    android.R.layout.simple_spinner_item, names);
++                pAd.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
++                pSpin.setAdapter(pAd);
++                layout.addView(pSpin);
++
++                // Add-profile button
++                android.widget.Button addBtn = new android.widget.Button(this);
++                addBtn.setText("+ New profile");
++                layout.addView(addBtn);
++
++                // Reasoning spinner
++                final String[] efforts = {"low", "medium", "high"};
++                android.widget.TextView el = new android.widget.TextView(this);
++                el.setText("Reasoning");
++                el.setTextSize(16);
++                layout.addView(el);
++                android.widget.Spinner eSpin = new android.widget.Spinner(this);
++                android.widget.ArrayAdapter<String> eAd = new android.widget.ArrayAdapter<>(this,
++                    android.R.layout.simple_spinner_item, efforts);
++                eAd.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
++                eSpin.setAdapter(eAd);
++                int eIdx = java.util.Arrays.asList(efforts).indexOf(fEffort);
++                if (eIdx >= 0) eSpin.setSelection(eIdx);
++                layout.addView(eSpin);
++
++                android.app.AlertDialog dlg = new android.app.AlertDialog.Builder(this)
++                    .setTitle("Model Profile")
++                    .setView(layout)
++                    .setPositiveButton("Apply", (d, w) -> {
++                        int pos = pSpin.getSelectedItemPosition();
++                        if (profiles.isEmpty() || pos < 0 || pos >= profiles.size()) {
++                            android.widget.Toast.makeText(this, "No profile selected",
++                                android.widget.Toast.LENGTH_SHORT).show();
++                            return;
++                        }
++                        String[] pr = profiles.get(pos);
++                        String newEffort = efforts[eSpin.getSelectedItemPosition()];
++                        applyProfile(pr[1], pr[2], newEffort);
++                    })
++                    .setNegativeButton("Cancel", null)
++                    .create();
++
++                addBtn.setOnClickListener(v -> showNewProfileDialog(() -> {
++                    dlg.dismiss();
++                    showProfileDialog();
++                }));
++
++                dlg.show();
++            });
++        }).start();
++    }
++
++    /** Dialog to create a new profile (name + provider + model). */
++    private void showNewProfileDialog(Runnable onDone) {
++        android.widget.LinearLayout layout = new android.widget.LinearLayout(this);
++        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
++        int pad = (int) (16 * getResources().getDisplayMetrics().density);
++        layout.setPadding(pad, pad, pad, pad);
++
++        android.widget.EditText nInput = new android.widget.EditText(this);
++        nInput.setHint("Profile name (e.g. Cepat)");
++        nInput.setSingleLine(true);
++        layout.addView(nInput);
++
++        android.widget.EditText pInput = new android.widget.EditText(this);
++        pInput.setHint("Provider (e.g. google)");
++        pInput.setSingleLine(true);
++        layout.addView(pInput);
++
++        android.widget.EditText mInput = new android.widget.EditText(this);
++        mInput.setHint("Model (e.g. gemini-3.5-flash-lite)");
++        mInput.setSingleLine(true);
++        layout.addView(mInput);
++
++        new android.app.AlertDialog.Builder(this)
++            .setTitle("New profile")
++            .setView(layout)
++            .setPositiveButton("Save", (d, w) -> {
++                String n = nInput.getText().toString().trim();
++                String p = pInput.getText().toString().trim();
++                String m = mInput.getText().toString().trim();
++                if (n.isEmpty() || p.isEmpty() || m.isEmpty()) {
++                    android.widget.Toast.makeText(this, "Fill all fields",
++                        android.widget.Toast.LENGTH_SHORT).show();
++                    return;
++                }
++                if (saveProfileFile(n, p, m)) {
++                    android.widget.Toast.makeText(this, "Profile saved: " + n,
++                        android.widget.Toast.LENGTH_SHORT).show();
++                    if (onDone != null) onDone.run();
++                } else {
++                    android.widget.Toast.makeText(this, "Failed to save",
++                        android.widget.Toast.LENGTH_SHORT).show();
++                }
++            })
++            .setNegativeButton("Cancel", null)
++            .show();
++    }
++
++    /** Apply profile: write provider/model + thinking effort to goose config. */
++    private void applyProfile(String provider, String model, String effort) {
++        new Thread(() -> {
++            try {
++                com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(this);
++                String safeP = provider.replace("'", "");
++                String safeM = model.replace("'", "");
++                String safeE = effort.replace("'", "");
++                String py = "python3 - << 'PYEOF'\n"
++                    + "import re\n"
++                    + "p='/root/.config/goose/config.yaml'\n"
++                    + "t=open(p).read()\n"
++                    + "t=re.sub(r'^active_provider:.*', 'active_provider: " + safeP + "', t, flags=re.M)\n"
++                    + "t=re.sub(r'^GOOSE_THINKING_EFFORT:.*', 'GOOSE_THINKING_EFFORT: " + safeE + "', t, flags=re.M)\n"
++                    + "t=re.sub(r'(?m)^(  " + safeP + ":\\s*\\n(?:.*\\n)*?    model: ).*$', r'\\1" + safeM + "', t)\n"
++                    + "open(p,'w').write(t)\n"
++                    + "print('ok')\n"
++                    + "PYEOF\n";
++                core.customChrootCommand(py, true);
++                runOnUiThread(() -> android.widget.Toast.makeText(this,
++                    "Applied: " + safeM + " (" + safeE + ")", android.widget.Toast.LENGTH_SHORT).show());
++            } catch (Exception e) {
++                runOnUiThread(() -> android.widget.Toast.makeText(this,
++                    "Failed: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show());
++            }
++        }).start();
++    }
++
++private void showFilesDialog() {
+         GooseFiles.ensureGooseDir();
+         browserPath = GooseFiles.GOOSE_DIR;
+         showBrowserDialog();
+diff --git a/app/src/main/res/menu/goose_chat_menu.xml b/app/src/main/res/menu/goose_chat_menu.xml
+index 1124fd3..f3d53fa 100644
+--- a/app/src/main/res/menu/goose_chat_menu.xml
++++ b/app/src/main/res/menu/goose_chat_menu.xml
+@@ -11,4 +11,9 @@
+         android:title="Sessions"
+         android:icon="@drawable/chat"
+         app:showAsAction="ifRoom" />
++    <item
++        android:id="@+id/goose_menu_model"
++        android:title="Model"
++        android:icon="@drawable/settings"
++        app:showAsAction="ifRoom" />
+ </menu>
