@@ -1,0 +1,206 @@
+diff --git a/app/src/main/res/menu/goose_chat_menu.xml b/app/src/main/res/menu/goose_chat_menu.xml
+index 1124fd3..de08f36 100644
+--- a/app/src/main/res/menu/goose_chat_menu.xml
++++ b/app/src/main/res/menu/goose_chat_menu.xml
+@@ -11,4 +11,9 @@
+         android:title="Sessions"
+         android:icon="@drawable/chat"
+         app:showAsAction="ifRoom" />
++    <item
++        android:id="@+id/goose_menu_provider"
++        android:title="Provider"
++        android:icon="@drawable/settings"
++        app:showAsAction="ifRoom" />
+ </menu>
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+index 6258e6b..2b819e1 100644
+--- a/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
++++ b/app/src/main/java/com/zalexdev/stryker/goose/GooseChatActivity.java
+@@ -81,6 +81,10 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+                 showFilesDialog();
+                 return true;
+             }
++            if (item.getItemId() == R.id.goose_menu_provider) {
++                showProviderDialog();
++                return true;
++            }
+             return false;
+         });
+ 
+@@ -775,6 +779,176 @@ public class GooseChatActivity extends AppCompatActivity implements GooseAcpClie
+         showBrowserDialog();
+     }
+ 
++    /** Provider & model settings dialog: change provider/model/thinking effort, set API key. */
++    private void showProviderDialog() {
++        new Thread(() -> {
++            // Fetch current config from chroot
++            String curProvider = "google";
++            String curModel = "";
++            String curEffort = "medium";
++            boolean hasKey = false;
++            try {
++                com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(this);
++                java.util.ArrayList<String> out = core.customChrootCommand(
++                    "cat /root/.config/goose/config.yaml 2>/dev/null; echo '---SECRETS---'; cat /root/.config/goose/secrets.yaml 2>/dev/null", true);
++                StringBuilder sb = new StringBuilder();
++                for (String l : out) sb.append(l).append("\n");
++                String all = sb.toString();
++                String cfg = all.contains("---SECRETS---") ? all.substring(0, all.indexOf("---SECRETS---")) : all;
++                String sec = all.contains("---SECRETS---") ? all.substring(all.indexOf("---SECRETS---")) : "";
++                java.util.regex.Matcher m = java.util.regex.Pattern.compile("^active_provider:\\s*(\\S+)", java.util.regex.Pattern.MULTILINE).matcher(cfg);
++                if (m.find()) curProvider = m.group(1).trim();
++                m = java.util.regex.Pattern.compile("^GOOSE_THINKING_EFFORT:\\s*(\\S+)", java.util.regex.Pattern.MULTILINE).matcher(cfg);
++                if (m.find()) curEffort = m.group(1).trim().toLowerCase();
++                // model under providers.<provider>:
++                m = java.util.regex.Pattern.compile("^  " + java.util.regex.Pattern.quote(curProvider) + ":\\s*\\n((?:    \\S.*\\n?)+)", java.util.regex.Pattern.MULTILINE).matcher(cfg);
++                if (m.find()) {
++                    java.util.regex.Matcher mm = java.util.regex.Pattern.compile("^    model:\\s*(\\S+)", java.util.regex.Pattern.MULTILINE).matcher(m.group(1));
++                    if (mm.find()) curModel = mm.group(1).trim();
++                }
++                hasKey = sec.contains("_API_KEY:");
++            } catch (Exception ignored) {}
++
++            final String fProvider = curProvider;
++            final String fModel = curModel;
++            final String fEffort = curEffort;
++            final boolean fHasKey = hasKey;
++
++            ui(() -> {
++                android.widget.LinearLayout layout = new android.widget.LinearLayout(this);
++                layout.setOrientation(android.widget.LinearLayout.VERTICAL);
++                int pad = (int) (16 * getResources().getDisplayMetrics().density);
++                layout.setPadding(pad, pad, pad, pad);
++
++                // Provider spinner
++                final String[] providers = {"google", "openai", "anthropic", "openrouter", "groq", "deepseek", "ollama", "azure", "bedrock"};
++                android.widget.TextView pl = new android.widget.TextView(this);
++                pl.setText("Provider");
++                layout.addView(pl);
++                android.widget.Spinner pSpin = new android.widget.Spinner(this);
++                android.widget.ArrayAdapter<String> pAd = new android.widget.ArrayAdapter<>(this,
++                    android.R.layout.simple_spinner_item, providers);
++                pAd.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
++                pSpin.setAdapter(pAd);
++                int pIdx = java.util.Arrays.asList(providers).indexOf(fProvider);
++                if (pIdx >= 0) pSpin.setSelection(pIdx);
++                layout.addView(pSpin);
++
++                // Model input
++                android.widget.TextView ml = new android.widget.TextView(this);
++                ml.setText("Model");
++                layout.addView(ml);
++                android.widget.EditText mInput = new android.widget.EditText(this);
++                mInput.setText(fModel);
++                mInput.setHint("e.g. gemini-3.5-flash-lite");
++                mInput.setSingleLine(true);
++                layout.addView(mInput);
++
++                // Thinking effort spinner
++                final String[] efforts = {"low", "medium", "high"};
++                android.widget.TextView el = new android.widget.TextView(this);
++                el.setText("Thinking effort");
++                layout.addView(el);
++                android.widget.Spinner eSpin = new android.widget.Spinner(this);
++                android.widget.ArrayAdapter<String> eAd = new android.widget.ArrayAdapter<>(this,
++                    android.R.layout.simple_spinner_item, efforts);
++                eAd.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
++                eSpin.setAdapter(eAd);
++                int eIdx = java.util.Arrays.asList(efforts).indexOf(fEffort);
++                if (eIdx >= 0) eSpin.setSelection(eIdx);
++                layout.addView(eSpin);
++
++                // API key input
++                android.widget.TextView kl = new android.widget.TextView(this);
++                kl.setText(fHasKey ? "API key (already set — leave empty to keep)" : "API key (required)");
++                layout.addView(kl);
++                android.widget.EditText kInput = new android.widget.EditText(this);
++                kInput.setHint("Paste API key here");
++                kInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
++                kInput.setSingleLine(true);
++                layout.addView(kInput);
++
++                new androidx.appcompat.app.AlertDialog.Builder(this)
++                    .setTitle("Goose Provider & Model")
++                    .setView(layout)
++                    .setPositiveButton("Save", (d, w) -> {
++                        String newProvider = providers[pSpin.getSelectedItemPosition()];
++                        String newModel = mInput.getText().toString().trim();
++                        String newEffort = efforts[eSpin.getSelectedItemPosition()];
++                        String newKey = kInput.getText().toString().trim();
++                        saveProviderConfig(newProvider, newModel, newEffort, newKey);
++                    })
++                    .setNegativeButton("Cancel", null)
++                    .show();
++            });
++        }).start();
++    }
++
++    /** Write provider/model/effort/API key to goose config via chroot. */
++    private void saveProviderConfig(String provider, String model, String effort, String apiKey) {
++        new Thread(() -> {
++            try {
++                com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(this);
++                // Map provider -> env var name for secrets.yaml
++                String keyName;
++                switch (provider) {
++                    case "openai": keyName = "OPENAI_API_KEY"; break;
++                    case "anthropic": keyName = "ANTHROPIC_API_KEY"; break;
++                    case "openrouter": keyName = "OPENROUTER_API_KEY"; break;
++                    case "groq": keyName = "GROQ_API_KEY"; break;
++                    case "deepseek": keyName = "DEEPSEEK_API_KEY"; break;
++                    default: keyName = "GOOGLE_API_KEY"; break;
++                }
++                StringBuilder py = new StringBuilder();
++                py.append("python3 - << 'PYEOF'\n");
++                py.append("import re, os\n");
++                py.append("cfg='/root/.config/goose/config.yaml'\n");
++                py.append("t=open(cfg).read()\n");
++                py.append("t=re.sub(r'^active_provider:.*', 'active_provider: ").append(provider.replace("'", "")).append("', t, flags=re.M)\n");
++                py.append("t=re.sub(r'^GOOSE_THINKING_EFFORT:.*', 'GOOSE_THINKING_EFFORT: ").append(effort.replace("'", "")).append("', t, flags=re.M)\n");
++                if (!model.isEmpty()) {
++                    // Update or add provider block with model
++                    py.append("prov='").append(provider.replace("'", "")).append("'\n");
++                    py.append("mod='").append(model.replace("'", "")).append("'\n");
++                    py.append("pat=re.compile(r'^  '+re.escape(prov)+r':\\s*\\n((?:    \\S.*\\n?)+)', re.M)\n");
++                    py.append("mm=pat.search(t)\n");
++                    py.append("if mm:\n");
++                    py.append("    blk=mm.group(0)\n");
++                    py.append("    blk2=re.sub(r'^    model:.*', '    model: '+mod, blk, flags=re.M)\n");
++                    py.append("    t=t[:mm.start()]+blk2+t[mm.end():]\n");
++                    py.append("else:\n");
++                    py.append("    t=re.sub(r'^(providers:\\s*\\n)', r'\\1  '+prov+':\\n    enabled: true\\n    model: '+mod+'\\n    configured: true\\n', t, flags=re.M)\n");
++                }
++                py.append("open(cfg,'w').write(t)\n");
++                if (!apiKey.isEmpty()) {
++                    py.append("sec='/root/.config/goose/secrets.yaml'\n");
++                    py.append("s=open(sec).read() if os.path.exists(sec) else ''\n");
++                    py.append("kn='").append(keyName).append("'\n");
++                    py.append("kv='''").append(apiKey.replace("'", "")).append("'''\n");
++                    py.append("import re as _re\n");
++                    py.append("s=_re.sub(r'^'+kn+r':.*', kn+': '+kv, s, flags=_re.M) if _re.search(r'^'+kn+r':', s, flags=_re.M) else s+kn+': '+kv+'\\n'\n");
++                    py.append("open(sec,'w').write(s)\n");
++                    py.append("os.system('chmod 600 '+sec)\n");
++                }
++                py.append("print('OK')\n");
++                py.append("PYEOF\n");
++                java.util.ArrayList<String> out = core.customChrootCommand(py.toString(), true);
++                boolean ok = false;
++                for (String l : out) if (l.trim().equals("OK")) ok = true;
++                final boolean fOk = ok;
++                ui(() -> {
++                    if (fOk) {
++                        android.widget.Toast.makeText(this, "Saved. Restart Ghost session to apply.", android.widget.Toast.LENGTH_LONG).show();
++                    } else {
++                        android.widget.Toast.makeText(this, "Save failed — check config.", android.widget.Toast.LENGTH_LONG).show();
++                    }
++                });
++            } catch (Exception e) {
++                ui(() -> android.widget.Toast.makeText(this, "Error: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show());
++            }
++        }).start();
++    }
++
+     /** Open file with external app via Android chooser (e.g. MT Manager). */
+     private void openWith(File file) {
+         try {
