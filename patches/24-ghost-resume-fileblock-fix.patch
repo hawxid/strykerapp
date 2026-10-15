@@ -1,0 +1,38 @@
+diff --git a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
+index 9e01b7e..8c961c9 100644
+--- a/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
++++ b/app/src/main/java/com/zalexdev/stryker/goose/ChatAdapter.java
+@@ -121,14 +121,25 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.VH> {
+ 
+         // Collapsible TOOL output: collapsed = first 5 lines + hint
+         String displayText = m.text != null ? m.text : "";
+-        if (m.type == ChatMessage.Type.USER && displayText.startsWith("File: ")) {
+-            int nl = displayText.indexOf('\n');
+-            if (nl > 6) {
+-                String fname = displayText.substring(6, nl).trim();
+-                String safe = fname.replaceAll("[^a-zA-Z0-9._-]", "_");
+-                if (safe.isEmpty()) safe = "file";
+-                String upath = "/sdcard/Stryker/goose/uploads/" + safe;
+-                displayText = "\uD83D\uDCC4 " + fname + "\n[file:" + upath + "]";
++        if (m.type == ChatMessage.Type.USER) {
++            // 24: blok "File: <nama>" + fenced content dari sessions.db (resume)
++            // bisa muncul di tengah teks, bukan cuma di awal pesan. Ganti tiap
++            // blok fence jadi kartu file; teks user di sekitarnya tetap utuh.
++            java.util.regex.Matcher fbm = java.util.regex.Pattern.compile(
++                "File: ([^\\n\\r]+)\\r?\\n```[\\s\\S]*?(```|\\u2026\\[truncated\\])")
++                .matcher(displayText);
++            if (fbm.find()) {
++                StringBuffer fbsb = new StringBuffer();
++                do {
++                    String fname = fbm.group(1).trim();
++                    String safe = fname.replaceAll("[^a-zA-Z0-9._-]", "_");
++                    if (safe.isEmpty()) safe = "file";
++                    String upath = "/sdcard/Stryker/goose/uploads/" + safe;
++                    fbm.appendReplacement(fbsb, java.util.regex.Matcher.quoteReplacement(
++                        "\uD83D\uDCC4 " + fname + "\n[file:" + upath + "]"));
++                } while (fbm.find());
++                fbm.appendTail(fbsb);
++                displayText = fbsb.toString();
+             }
+         }
+         if (m.type == ChatMessage.Type.TOOL && !m.expanded) {
